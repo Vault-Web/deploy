@@ -1,0 +1,110 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: vault-web-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DEFAULT_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DEFAULT_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  pgadmin:
+    image: dpage/pgadmin4:9
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    ports:
+      - "${PGADMIN_PORT}:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  vault-web-backend:
+    build:
+      context: .
+      dockerfile: docker/vault-web-backend.Dockerfile
+    environment:
+      SERVER_PORT: 8080
+      SERVER_SSL_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB_VAULT}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESHSECRET: ${JWT_REFRESH_SECRET}
+      APP_TIMEZONE: UTC
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  cloud-page-backend:
+    build:
+      context: .
+      dockerfile: docker/cloud-page-backend.Dockerfile
+    environment:
+      SERVER_PORT: 8090
+      SERVER_SSL_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB_CLOUD}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+    volumes:
+      - ${CLOUD_HOST_ROOT}:/host-cloud:rw
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  password-manager-backend:
+    build:
+      context: .
+      dockerfile: docker/password-manager-backend.Dockerfile
+    environment:
+      SERVER_PORT: 8091
+      SERVER_SSL_ENABLED: "false"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB_PASSWORD_MANAGER}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      ENCRYPTION_SECRET: ${PASSWORD_MANAGER_ENCRYPTION_SECRET}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  server-docs:
+    build:
+      context: .
+      dockerfile: docker/server-docs.Dockerfile
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    ports:
+      - "${FRONTEND_PORT}:80"
+    depends_on:
+      vault-web-backend:
+        condition: service_started
+      cloud-page-backend:
+        condition: service_started
+      password-manager-backend:
+        condition: service_started
+      server-docs:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  pgdata:

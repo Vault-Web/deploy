@@ -1,0 +1,9 @@
+.git
+.gitmodules
+**/.git
+**/target
+**/node_modules
+**/.angular
+**/dist
+**/.idea
+**/*.iml
