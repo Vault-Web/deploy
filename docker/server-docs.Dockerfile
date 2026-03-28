@@ -1,4 +1,4 @@
-FROM nginx:1.27-alpine
+FROM nginx:1.29-alpine
 
 RUN mkdir -p /usr/share/nginx/html
 COPY services/server-docs /usr/share/nginx/html
