@@ -1,0 +1,63 @@
+name: Weekly Submodule Update
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-submodules:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Sync and update submodules
+        run: |
+          git submodule sync --recursive
+          git submodule update --init --recursive --remote
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create pull request
+        if: steps.changes.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: chore/weekly-submodule-update
+          delete-branch: true
+          commit-message: "chore(deps): weekly submodule update"
+          title: "chore(deps): weekly submodule update"
+          body: |
+            Automated weekly update of deploy submodule pointers.
+
+            Updated using:
+            - `git submodule sync --recursive`
+            - `git submodule update --init --recursive --remote`
+
+            Please review and merge if all services are compatible.
+          labels: |
+            dependencies
+            automated
+          add-paths: |
+            .gitmodules
+            services/**
