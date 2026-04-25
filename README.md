@@ -67,6 +67,20 @@ docker compose -f docker-compose.deploy.yml up -d --build
 docker compose -f docker-compose.deploy.yml ps
 ```
 
+### Optional: configure Vault-Web external links
+
+The external links are loaded at runtime from: `services/vault-web/frontend/public/runtime-config.local.js` (gitignored)
+
+Therefore edit `services/vault-web/frontend/public/runtime-config.local.js` to add your own external links.
+
+Apply changes:
+
+```bash
+cd /opt/deploy
+docker compose -f docker-compose.deploy.yml build frontend
+docker compose -f docker-compose.deploy.yml up -d frontend
+```
+
 ## 2) Headscale Caddy Routing
 
 Connect Headscale Caddy container to deploy network (one-time):
