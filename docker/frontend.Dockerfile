@@ -17,7 +17,7 @@ EOT
 RUN npm ci
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /workspace/dist/frontend/browser /usr/share/nginx/html
 
