@@ -109,6 +109,8 @@ services:
     build:
       context: .
       dockerfile: docker/frontend.Dockerfile
+    environment:
+      VAULT_HABITS_URL: ${VAULT_HABITS_URL:-}
     ports:
       - "${FRONTEND_PORT}:80"
     depends_on:
