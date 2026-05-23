@@ -89,6 +89,22 @@ services:
       dockerfile: docker/server-docs.Dockerfile
     restart: unless-stopped
 
+  vault-habits:
+    build:
+      context: .
+      dockerfile: docker/vault-habits.Dockerfile
+    environment:
+      HABITS_STORAGE: DATABASE
+      DATABASE_URL: sqlite+aiosqlite:////app/.user/habits.db
+      NICEGUI_STORAGE_SECRET: ${VAULT_HABITS_NICEGUI_SECRET}
+      VAULT_WEB_JWT_SECRET: ${JWT_SECRET}
+      VAULT_WEB_LOGIN_URL: ${VAULT_HABITS_LOGIN_URL}
+      VAULT_WEB_AUTH_ONLY: "true"
+      VAULT_WEB_USER_EMAIL_DOMAIN: ${VAULT_HABITS_USER_EMAIL_DOMAIN}
+    volumes:
+      - vault-habits-data:/app/.user
+    restart: unless-stopped
+
   frontend:
     build:
       context: .
@@ -104,7 +120,10 @@ services:
         condition: service_started
       server-docs:
         condition: service_started
+      vault-habits:
+        condition: service_started
     restart: unless-stopped
 
 volumes:
   pgdata:
+  vault-habits-data:

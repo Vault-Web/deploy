@@ -14,3 +14,7 @@
 	path = services/server-docs
 	url = https://github.com/Vault-Web/server-docs.git
 	branch = main
+[submodule "services/vault-habits"]
+	path = services/vault-habits
+	url = https://github.com/Vault-Web/vault-habits.git
+	branch = feat/vault-web-integration
