@@ -17,4 +17,4 @@
 [submodule "services/vault-habits"]
 	path = services/vault-habits
 	url = https://github.com/Vault-Web/vault-habits.git
-	branch = feat/vault-web-integration
+	branch = main
