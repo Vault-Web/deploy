@@ -28,6 +28,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    mem_limit: 512m
     restart: unless-stopped
 
   vault-web-backend:
@@ -43,9 +44,12 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESHSECRET: ${JWT_REFRESH_SECRET}
       APP_TIMEZONE: UTC
+    volumes:
+      - vault-web-uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
+    mem_limit: 1024m
     restart: unless-stopped
 
   cloud-page-backend:
@@ -64,6 +68,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    mem_limit: 1536m
     restart: unless-stopped
 
   password-manager-backend:
@@ -81,6 +86,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    mem_limit: 768m
     restart: unless-stopped
 
   server-docs:
@@ -104,6 +110,7 @@ services:
       VAULT_WEB_USER_EMAIL_DOMAIN: ${VAULT_HABITS_USER_EMAIL_DOMAIN}
     volumes:
       - vault-habits-data:/app/.user
+    mem_limit: 512m
     restart: unless-stopped
 
   frontend:
@@ -130,3 +137,4 @@ services:
 volumes:
   pgdata:
   vault-habits-data:
+  vault-web-uploads:
