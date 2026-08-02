@@ -1,1 +1,12 @@
+# Local configuration. Carries database, pgAdmin and JWT credentials.
 .env
+# Backups of it are taken before every change and hold the same credentials,
+# under names like .env.bak.2026-04-01-154034. They must never be committed.
+.env.*
+!.env.example
+
+# Backups of deployment configuration, e.g. docker-compose.deploy.yml.bak-20260801
+# or Caddyfile.bak-20260731.
+*.bak
+*.bak-*
+*.bak.*
