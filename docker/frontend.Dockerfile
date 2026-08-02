@@ -18,7 +18,7 @@ RUN npm ci
 RUN npm run build
 
 FROM nginx:1.27-alpine
-COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY docker/nginx/default.conf /etc/nginx/templates/default.conf.template
 COPY docker/nginx/entrypoint.sh /entrypoint.sh
 COPY --from=build /workspace/dist/frontend/browser /usr/share/nginx/html
 RUN chmod +x /entrypoint.sh
