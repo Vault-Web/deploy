@@ -8,7 +8,6 @@ Deployment repository for Vault Web with Docker Compose and service submodules.
 
 - [`services/vault-web`](./services/vault-web)
 - [`services/cloud-page`](./services/cloud-page)
-- [`services/password-manager`](./services/password-manager) (legacy, kept during Vaultwarden migration)
 - [`services/server-docs`](./services/server-docs)
 
 Main compose files:
@@ -263,13 +262,11 @@ Browser on VPN device at `https://vault.example.com`:
 
 ## 6) Vaultwarden Operations
 
-Vault-Web is moving from the experimental in-house password manager to
-Vaultwarden, because password management should rely on a mature
-Bitwarden-compatible client/server rather than custom portal code. During the
-migration, the legacy password-manager backend remains deployed so the existing
-Vault-Web `/passwords` page does not break. After Vault-Web ships the
-Vaultwarden launcher page and any required export is complete, remove the legacy
-service and archive the old repository.
+Vault-Web previously included an experimental in-house password manager. The
+deployment now uses Vaultwarden instead, because password management should rely
+on a mature Bitwarden-compatible client/server rather than custom portal code.
+Before removing an existing production password-manager database from backups,
+export any real entries that still need to be retained.
 
 Vault-Web should link users to Vaultwarden; it must not receive Vaultwarden
 master passwords, embed the web vault in an iframe, or forward Vault-Web tokens

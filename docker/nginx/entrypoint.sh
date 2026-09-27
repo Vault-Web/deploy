@@ -30,10 +30,13 @@ if [ -n "$VAULT_HABITS_URL" ]; then
 fi
 
 if [ -n "$VAULTWARDEN_PUBLIC_URL" ]; then
-  append_link "Passwords" "$VAULTWARDEN_PUBLIC_URL" "false"
+  vaultwarden_config="window.__VAULT_WEB_VAULTWARDEN_URL__ = \"${VAULTWARDEN_PUBLIC_URL}\";"
+else
+  vaultwarden_config="window.__VAULT_WEB_VAULTWARDEN_URL__ = null;"
 fi
 
 cat > /usr/share/nginx/html/runtime-config.local.js <<EOF
+${vaultwarden_config}
 window.__VAULT_WEB_EXTERNAL_LINKS__ = [
 ${links}
 ];

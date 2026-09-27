@@ -10,7 +10,6 @@ export const environment = {
   mainHostAddress: window.location.origin,
   mainApiUrl: '/api',
   cloudServiceApiUrl: '/cloud-api',
-  passwordManagerApiUrl: '/password-api',
 };
 EOT
 

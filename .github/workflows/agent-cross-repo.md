@@ -43,7 +43,6 @@ safe-outputs:
     allowed-repos:
       - "vault-web/vault-web"
       - "vault-web/cloud-page"
-      - "vault-web/password-manager"
       - "vault-web/auth-api-gateway"
       - "vault-web/server-docs"
       - "vault-web/deploy"
@@ -65,7 +64,6 @@ Vault-Web is several repositories that have to agree with each other:
 - `auth-api-gateway` — JWT authentication and authorization for everything else
 - `vault-web` — the portal
 - `cloud-page` — the file manager
-- `password-manager` — the legacy in-house password manager during migration
 - `vaultwarden` — the external password vault deployed from this repository
 - `server-docs` — the documentation
 - `deploy` — Docker Compose, deployment scripts, high-level operations docs, and

@@ -6,10 +6,6 @@
 	path = services/cloud-page
 	url = https://github.com/Vault-Web/cloud-page.git
 	branch = main
-[submodule "services/password-manager"]
-	path = services/password-manager
-	url = https://github.com/Vault-Web/password-manager.git
-	branch = main
 [submodule "services/server-docs"]
 	path = services/server-docs
 	url = https://github.com/Vault-Web/server-docs.git

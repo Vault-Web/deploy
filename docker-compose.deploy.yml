@@ -87,24 +87,6 @@ services:
     mem_limit: 512m
     restart: unless-stopped
 
-  password-manager-backend:
-    build:
-      context: .
-      dockerfile: docker/password-manager-backend.Dockerfile
-    environment:
-      SERVER_PORT: 8091
-      SERVER_SSL_ENABLED: "false"
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB_PASSWORD_MANAGER}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      JWT_SECRET: ${JWT_SECRET}
-      ENCRYPTION_SECRET: ${PASSWORD_MANAGER_ENCRYPTION_SECRET}
-    depends_on:
-      db:
-        condition: service_healthy
-    mem_limit: 768m
-    restart: unless-stopped
-
   server-docs:
     build:
       context: .
@@ -143,8 +125,6 @@ services:
       vault-web-backend:
         condition: service_started
       cloud-page-backend:
-        condition: service_started
-      password-manager-backend:
         condition: service_started
       server-docs:
         condition: service_started
