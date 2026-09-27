@@ -11,18 +11,32 @@ envsubst '${SHARE_HOST}' \
   < /etc/nginx/templates/default.conf.template \
   > /etc/nginx/conf.d/default.conf
 
+links=""
+
+append_link() {
+  if [ -n "$links" ]; then
+    links="${links},
+"
+  fi
+  links="${links}  {
+    name: \"$1\",
+    url: \"$2\",
+    forwardVaultWebToken: $3
+  }"
+}
+
 if [ -n "$VAULT_HABITS_URL" ]; then
-  cat > /usr/share/nginx/html/runtime-config.local.js <<EOF
+  append_link "Habits" "$VAULT_HABITS_URL" "true"
+fi
+
+if [ -n "$VAULTWARDEN_PUBLIC_URL" ]; then
+  append_link "Passwords" "$VAULTWARDEN_PUBLIC_URL" "false"
+fi
+
+cat > /usr/share/nginx/html/runtime-config.local.js <<EOF
 window.__VAULT_WEB_EXTERNAL_LINKS__ = [
-  {
-    name: "Habits",
-    url: "${VAULT_HABITS_URL}",
-    forwardVaultWebToken: true
-  }
+${links}
 ];
 EOF
-else
-  echo "window.__VAULT_WEB_EXTERNAL_LINKS__ = [];" > /usr/share/nginx/html/runtime-config.local.js
-fi
 
 exec "$@"

@@ -65,7 +65,8 @@ Vault-Web is several repositories that have to agree with each other:
 - `auth-api-gateway` — JWT authentication and authorization for everything else
 - `vault-web` — the portal
 - `cloud-page` — the file manager
-- `password-manager` — the password manager
+- `password-manager` — the legacy in-house password manager during migration
+- `vaultwarden` — the external password vault deployed from this repository
 - `server-docs` — the documentation
 - `deploy` — Docker Compose, deployment scripts, high-level operations docs, and
   the submodule pins that tie the versions together
@@ -83,6 +84,8 @@ operator-facing docs still describe the deployed shape.
 - **Deployment configuration** — `deploy` pins a submodule commit, sets an
   environment variable, exposes a port, names a container, mounts a volume, or
   declares a healthcheck that no longer matches the service.
+- **Vaultwarden operations** — the password vault needs a valid HTTPS domain,
+  a backed-up `/data` directory, safe signup settings, and a hashed admin token.
 - **Operational documentation** — `deploy` or `server-docs` describes setup,
   routing, environment variables, architecture, or security behaviour that the
   code or Compose files have since moved away from.

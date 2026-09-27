@@ -72,6 +72,21 @@ services:
     mem_limit: 1536m
     restart: unless-stopped
 
+  vaultwarden:
+    image: docker.io/vaultwarden/server:1.37.3@sha256:1587c45feaa479f1f5e8af3b00eded36bff77bcf1880cf8dbf0541706dd470e0
+    environment:
+      DOMAIN: ${VAULTWARDEN_PUBLIC_URL}
+      ROCKET_ADDRESS: 0.0.0.0
+      ROCKET_PORT: 80
+      SIGNUPS_ALLOWED: ${VAULTWARDEN_SIGNUPS_ALLOWED:-false}
+      INVITATIONS_ALLOWED: ${VAULTWARDEN_INVITATIONS_ALLOWED:-true}
+      SHOW_PASSWORD_HINT: "false"
+      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN}
+    volumes:
+      - ${VAULTWARDEN_DATA_DIR}:/data
+    mem_limit: 512m
+    restart: unless-stopped
+
   password-manager-backend:
     build:
       context: .
@@ -119,6 +134,7 @@ services:
       context: .
       dockerfile: docker/frontend.Dockerfile
     environment:
+      VAULTWARDEN_PUBLIC_URL: ${VAULTWARDEN_PUBLIC_URL:-}
       VAULT_HABITS_URL: ${VAULT_HABITS_URL:-}
       SHARE_HOST: ${SHARE_HOST:-}
     ports:

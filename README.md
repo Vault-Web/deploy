@@ -8,7 +8,7 @@ Deployment repository for Vault Web with Docker Compose and service submodules.
 
 - [`services/vault-web`](./services/vault-web)
 - [`services/cloud-page`](./services/cloud-page)
-- [`services/password-manager`](./services/password-manager)
+- [`services/password-manager`](./services/password-manager) (legacy, kept during Vaultwarden migration)
 - [`services/server-docs`](./services/server-docs)
 
 Main compose files:
@@ -25,13 +25,16 @@ This repository is deployed with this security model:
 3. Headscale Caddy (`/opt/headscale`) terminates public TLS on `443`.
 4. `vpn.example.com` stays public (required for Headscale/Tailscale control-plane).
 5. `vault.example.com` has no public DNS record and resolves only inside VPN via Split-DNS to `100.64.0.10`.
-6. Headscale Caddy proxies `vault.example.com` to `deploy-frontend-1:80`.
-7. Firewall + `DOCKER-USER` rules block accidental exposure of debug/admin ports.
-8. Vault user data backups run daily at `23:30` to an external disk using incremental snapshots.
+6. `passwords.example.com` follows the same VPN-only pattern and proxies to Vaultwarden.
+7. Headscale Caddy proxies `vault.example.com` to `deploy-frontend-1:80`.
+8. Headscale Caddy proxies `passwords.example.com` to `vaultwarden:80`.
+9. Firewall + `DOCKER-USER` rules block accidental exposure of debug/admin ports.
+10. Vault user data and Vaultwarden backups run daily to an external disk using incremental snapshots.
 
 Result:
 
 - `vault.example.com` stays HTTPS and secure-context capable.
+- `passwords.example.com` stays HTTPS for the Vaultwarden web vault and Bitwarden clients.
 - non-VPN users cannot resolve or reach Vault Web.
 - Headscale login endpoint remains reachable as designed.
 
@@ -42,6 +45,7 @@ Result:
 - DNS:
   - `vpn.example.com` -> server public IP
   - `vault.example.com` -> no public A/AAAA record (resolved only via Split-DNS in VPN)
+  - `passwords.example.com` -> no public A/AAAA record (resolved only via Split-DNS in VPN)
 - Router forwards `80/tcp` and `443/tcp` to server
 
 ## 1) Deploy Stack
@@ -56,8 +60,22 @@ cp -n .env.example .env
 Set required values in `/opt/deploy/.env`:
 
 - `FRONTEND_PORT=127.0.0.1:8080`
+- `VAULTWARDEN_PUBLIC_URL=https://passwords.example.com`
+- `VAULTWARDEN_DATA_DIR=/data/vaultwarden`
 - strong DB/JWT secrets
+- an Argon2id `VAULTWARDEN_ADMIN_TOKEN`
 - valid `CLOUD_HOST_ROOT` (existing host directory)
+
+Generate the Vaultwarden admin token hash:
+
+```bash
+docker run --rm -it vaultwarden/server:1.37.3 /vaultwarden hash --preset owasp
+```
+
+Place the resulting PHC string in `.env` as a single-quoted value. Keep
+`VAULTWARDEN_SIGNUPS_ALLOWED=false` for normal operation; temporarily set it to
+`true` only while creating the first account, then set it back to `false` and
+recreate the container.
 
 Start:
 
@@ -67,13 +85,14 @@ docker compose -f docker-compose.deploy.yml up -d --build
 docker compose -f docker-compose.deploy.yml ps
 ```
 
-### Optional: configure Vault-Web external links
+### Runtime external links
 
-The external links are loaded at runtime from: `services/vault-web/frontend/public/runtime-config.local.js` (gitignored)
+The frontend container writes `runtime-config.local.js` on startup. Set
+`VAULTWARDEN_PUBLIC_URL` and `VAULT_HABITS_URL` in `.env`; Vaultwarden is added
+without forwarding a Vault-Web token, while Habits keeps the existing SSO token
+handoff.
 
-Therefore edit `services/vault-web/frontend/public/runtime-config.local.js` to add your own external links.
-
-Apply changes:
+Apply `.env` changes:
 
 ```bash
 cd /opt/deploy
@@ -104,6 +123,10 @@ vpn.example.com {
 vault.example.com {
   reverse_proxy deploy-frontend-1:80
 }
+
+passwords.example.com {
+  reverse_proxy vaultwarden:80
+}
 ```
 
 Apply:
@@ -119,6 +142,8 @@ Important:
 
 - If you run `--force-recreate` again, reconnect `headscale-caddy` to `deploy_default` afterwards.
 - If `dial tcp: lookup deploy-frontend-1 ... no such host` appears, the network attach step is missing.
+- If Vaultwarden clients reject the server URL, verify that `passwords.example.com`
+  has a valid HTTPS certificate and that `VAULTWARDEN_PUBLIC_URL` matches it.
 
 ## 3) Split-DNS (central, production path)
 
@@ -131,6 +156,7 @@ interface=tailscale0
 listen-address=127.0.0.1,100.64.0.10
 no-resolv
 address=/vault.example.com/100.64.0.10
+address=/passwords.example.com/100.64.0.10
 server=1.1.1.1
 server=1.0.0.1
 cache-size=10000
@@ -159,6 +185,9 @@ dns:
         - 100.64.0.10
   extra_records:
     - name: vault.example.com
+      type: A
+      value: "100.64.0.10"
+    - name: passwords.example.com
       type: A
       value: "100.64.0.10"
 ```
@@ -214,21 +243,98 @@ docker compose -f /opt/deploy/docker-compose.deploy.yml ps
 docker compose -f /opt/headscale/docker-compose.yml ps
 curl -vk https://vpn.example.com
 dig +short vault.example.com
+dig +short passwords.example.com
 curl -vk https://vault.example.com
+curl -vk https://passwords.example.com/alive
 ```
 
 Expected:
 
 - `vpn.example.com` responds from Caddy/Headscale.
 - `vault.example.com` from VPN client resolves to `100.64.0.10` and returns `200`.
+- `passwords.example.com` from VPN client resolves to `100.64.0.10` and Vaultwarden `/alive` returns `200`.
 - `vault.example.com` from public resolver (for example `dig +short vault.example.com @1.1.1.1`) returns no record.
+- `passwords.example.com` from public resolver returns no record.
 
 Browser on VPN device at `https://vault.example.com`:
 
 - `window.isSecureContext` -> `true`
 - `!!globalThis.crypto?.subtle` -> `true`
 
-## 6) Daily Incremental Backup of `/data/vault-users` (23:30)
+## 6) Vaultwarden Operations
+
+Vault-Web is moving from the experimental in-house password manager to
+Vaultwarden, because password management should rely on a mature
+Bitwarden-compatible client/server rather than custom portal code. During the
+migration, the legacy password-manager backend remains deployed so the existing
+Vault-Web `/passwords` page does not break. After Vault-Web ships the
+Vaultwarden launcher page and any required export is complete, remove the legacy
+service and archive the old repository.
+
+Vault-Web should link users to Vaultwarden; it must not receive Vaultwarden
+master passwords, embed the web vault in an iframe, or forward Vault-Web tokens
+to Vaultwarden.
+
+Important operating rules:
+
+- use the dedicated HTTPS origin in `VAULTWARDEN_PUBLIC_URL`;
+- back up the full `VAULTWARDEN_DATA_DIR` before going live;
+- keep `VAULTWARDEN_SIGNUPS_ALLOWED=false` after the first account exists;
+- keep `SHOW_PASSWORD_HINT=false`;
+- store `VAULTWARDEN_ADMIN_TOKEN` as an Argon2id PHC hash, not plaintext;
+- keep `/admin` reachable only to operators who know the admin token.
+
+### Vaultwarden Backups
+
+Vaultwarden stores its database, attachments, sends, and RSA key files under
+`/data`. In this deployment, that is the host directory from
+`VAULTWARDEN_DATA_DIR`. Losing that directory means losing the password vaults,
+so test backup and restore before onboarding users.
+
+The backup script briefly stops the `vaultwarden` container before copying the
+data directory, then starts it again if it was running. This avoids copying a
+live SQLite database and its WAL files mid-write.
+
+Daily backup timer example:
+
+```bash
+cat >/etc/systemd/system/backup-vaultwarden.service <<'EOF'
+[Unit]
+Description=Incremental backup of Vaultwarden data
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/deploy
+ExecStart=/opt/deploy/scripts/backup-vaultwarden.sh
+EOF
+
+cat >/etc/systemd/system/backup-vaultwarden.timer <<'EOF'
+[Unit]
+Description=Daily incremental backup timer for Vaultwarden (23:20)
+
+[Timer]
+OnCalendar=*-*-* 23:20:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+
+systemctl daemon-reload
+systemctl enable --now backup-vaultwarden.timer
+systemctl start backup-vaultwarden.service
+```
+
+Restore example:
+
+```bash
+cd /opt/deploy
+docker compose -f docker-compose.deploy.yml stop vaultwarden
+scripts/restore-vaultwarden.sh /mnt/backup5tb/vaultwarden-backups/latest
+docker compose -f docker-compose.deploy.yml up -d vaultwarden
+```
+
+## 7) Daily Incremental Backup of `/data/vault-users` (23:30)
 
 ### Backup strategy
 
@@ -369,7 +475,7 @@ umount /mnt/backup5tb || true
 - `hdparm -C /dev/sdc` shows `unknown`:
   - common on USB enclosures; backup still works.
 
-## 7) Cloud Page User Root Folder Mapping
+## 8) Cloud Page User Root Folder Mapping
 
 `CLOUD_HOST_ROOT` is mounted as `/host-cloud` in container.
 Root folder paths stored in DB must use container path.
@@ -400,7 +506,7 @@ Path consistency reference:
 - Cloud Page container-visible path: `/host-cloud/<user>`
 - Syncthing user container-visible path: `/vault-user`
 
-## 8) Daily Operations
+## 9) Daily Operations
 
 Update deploy repo only:
 
@@ -425,21 +531,26 @@ Logs:
 ```bash
 docker compose -f /opt/deploy/docker-compose.deploy.yml logs -f frontend
 docker compose -f /opt/deploy/docker-compose.deploy.yml logs -f vault-web-backend
+docker compose -f /opt/deploy/docker-compose.deploy.yml logs -f vaultwarden
 docker compose -f /opt/headscale/docker-compose.yml logs -f caddy
 ```
 
-## 9) Syncthing User Sync (Optional)
+## 10) Syncthing User Sync (Optional)
 
 For multi-user Syncthing with per-user server folder isolation and VPN-only access, use:
 
 - [Syncthing Runbook S1 - Vault Users](./services/server-docs/syncthing/runbooks/01-vault-users-syncthing.md)
 
-## 8) Known Pitfalls
+## 11) Known Pitfalls
 
 - `dial tcp: lookup frontend ... no such host` or `deploy-frontend-1 ... no such host` in headscale-caddy logs:
   - missing Docker network connection (`deploy_default` not attached to `headscale-caddy`).
 - `ERR_SSL_PROTOCOL_ERROR` on `vault.example.com`:
   - Caddy route broken, certificate pending, or wrong reverse proxy target.
+- Bitwarden clients keep using `bitwarden.com`:
+  - choose the self-hosted/server URL option and enter `https://passwords.example.com`.
+- Vaultwarden account creation is visible after onboarding:
+  - set `VAULTWARDEN_SIGNUPS_ALLOWED=false` and recreate the container.
 - `vault.example.com` resolves to public IP on VPN client:
   - Split-DNS not applied on client; reconnect with `--accept-dns=true` and flush resolver cache.
 - `Invalid CORS request`:
