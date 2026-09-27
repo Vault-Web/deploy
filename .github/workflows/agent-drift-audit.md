@@ -30,10 +30,11 @@ tools:
     min-integrity: approved
 
 safe-outputs:
+  report-failure-as-issue: false
   create-issue:
     max: 2
     title-prefix: "[audit] "
-    labels: [agent-audit]
+    labels: [agent-audit, found-from-deploy, deploy-drift]
 
 network:
   allowed: [defaults]
@@ -80,3 +81,5 @@ If you have nothing strong enough, emit `noop`.
 
 Each issue states the problem, the file and line, why it matters, and what a fix
 would involve. Keep it short enough that a maintainer can judge it in a minute.
+Issues from this deploy audit are labelled `found-from-deploy` and `deploy-drift`
+so they can be routed and filtered separately from ordinary repository work.

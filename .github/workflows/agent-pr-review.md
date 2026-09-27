@@ -1,13 +1,22 @@
 ---
 description: Reviews pull requests for correctness, security, regressions, and missing tests.
-intent: Surface concrete, high-confidence defects in pull requests before a human reviewer spends time on them, and stay silent when there is nothing substantive to report.
+intent: Surface concrete, high-confidence defects in pull requests before a human reviewer spends time on them, and leave a short approve suggestion when there is nothing substantive to report.
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened]
     forks: ["*"]
   skip-bots: [dependabot, renovate, copilot-swe-agent]
   reaction: eyes
+  roles: all
+
+user-rate-limit:
+  max-runs-per-window: 3
+  window: 60
+
+checkout:
+  repository: ${{ github.repository }}
+  ref: ${{ github.event.pull_request.base.sha }}
 
 permissions:
   contents: read
@@ -16,21 +25,30 @@ permissions:
 
 timeout-minutes: 12
 max-turns: 30
-max-ai-credits: 60
-max-daily-ai-credits: 180
+max-ai-credits: 150
+max-daily-ai-credits: 450
 
 concurrency:
   group: "agent-pr-review-${{ github.event.pull_request.number }}"
   cancel-in-progress: true
 
 tools:
+  bash: ["cat", "ls", "find", "grep", "head", "tail", "wc", "sort", "sed", "awk", "jq", "git", "gh"]
   github:
     mode: gh-proxy
     toolsets: [repos, issues, pull_requests]
     allowed-repos: ["vault-web/deploy"]
-    min-integrity: approved
+    min-integrity: none
 
 safe-outputs:
+  report-failure-as-issue: false
+  create-pull-request-review-comment:
+    max: 5
+    target: triggering
+  submit-pull-request-review:
+    max: 1
+    allowed-events: [COMMENT, REQUEST_CHANGES]
+    supersede-older-reviews: true
   add-comment:
     max: 1
     target: triggering
@@ -66,9 +84,22 @@ Do not praise. Do not suggest changes you cannot justify with a concrete failure
 Report at most the five most important findings. For each one give the file, the
 line, what breaks, and a concrete input or state that triggers it.
 
-If you find nothing substantive, produce **no comment at all** — emit `noop`
-instead. A quiet review is a correct review when the code is fine. Never comment
-merely to show you ran.
+If you find nothing substantive, submit a single `COMMENT` review with exactly:
 
-Begin your comment with `### Agent review` so it is distinguishable from human
-reviews.
+`### Agent review`
+
+`Suggestion: approve. I did not find any high-confidence correctness, security,
+regression, or missing-test issues in this diff.`
+
+Do not create inline comments in that case.
+
+When a finding maps to a changed line, create an inline review comment on that
+line. Submit one consolidated pull request review:
+
+- use `REQUEST_CHANGES` when at least one finding is merge-blocking;
+- use `COMMENT` when the findings are useful but not merge-blocking;
+- begin the review body with `### Agent review`;
+- keep the body to a short summary and let inline comments carry line-specific
+  detail.
+
+Use `add-comment` only when GitHub cannot attach any finding to the changed diff.
