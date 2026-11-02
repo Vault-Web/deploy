@@ -1,17 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Installs the official Gatus release binary. Pin GATUS_VERSION explicitly.
+# Install the official Gatus binary from its pinned Go module version.
 GATUS_VERSION="${GATUS_VERSION:-v5.15.0}"
-ARCH="$(uname -m)"
-case "$ARCH" in
-  x86_64) ASSET_ARCH="amd64" ;;
-  aarch64|arm64) ASSET_ARCH="arm64" ;;
-  *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
-esac
+MIN_GO_VERSION="1.23.3"
 
 if [[ "$(id -u)" -ne 0 ]]; then
   echo "Run this script with sudo/root." >&2
+  exit 1
+fi
+
+if ! command -v go >/dev/null 2>&1; then
+  echo "Go >= ${MIN_GO_VERSION} is required to install Gatus." >&2
+  exit 1
+fi
+
+GO_VERSION="$(go version | awk '{print $3}' | sed 's/^go//')"
+if [[ "$(printf '%s\n' "$MIN_GO_VERSION" "$GO_VERSION" | sort -V | head -n1)" != "$MIN_GO_VERSION" ]]; then
+  echo "Go >= ${MIN_GO_VERSION} is required; found ${GO_VERSION}." >&2
   exit 1
 fi
 
@@ -19,17 +25,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 umask 077
-# Release assets are distributed as a tar.gz archive, not a bare executable.
-ASSET="gatus-linux-$ASSET_ARCH"
-URL="https://github.com/TwiN/gatus/releases/download/$GATUS_VERSION/$ASSET.tar.gz"
 
-curl --fail --location --silent --show-error "$URL" -o "$TMP_DIR/gatus.tar.gz"
-tar -xzf "$TMP_DIR/gatus.tar.gz" -C "$TMP_DIR"
-if [[ ! -f "$TMP_DIR/gatus" ]]; then
-  echo "The release archive did not contain the expected gatus binary." >&2
+mkdir -p "$TMP_DIR/bin"
+
+CGO_ENABLED=0 GOBIN="$TMP_DIR/bin" \
+  go install "github.com/TwiN/gatus/v5@${GATUS_VERSION}"
+
+if [[ ! -x "$TMP_DIR/bin/gatus" ]]; then
+  echo "Gatus binary installation failed." >&2
   exit 1
 fi
-install -o root -g root -m 0755 "$TMP_DIR/gatus" /usr/local/bin/gatus
+
+install -o root -g root -m 0755 "$TMP_DIR/bin/gatus" /usr/local/bin/gatus
 
 if ! getent group gatus >/dev/null; then
   groupadd --system gatus
