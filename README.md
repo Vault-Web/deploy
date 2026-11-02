@@ -453,7 +453,7 @@ Gatus runs as a **host-level systemd service**, not in `docker-compose.deploy.ym
 
 ### Network and privacy model
 
-- Install Gatus on the deployment host (or another independent host) and keep its dashboard bound to loopback unless you deliberately protect it behind an authenticated VPN-only proxy.
+- Install Gatus on the deployment host (or another independent host) and keep its dashboard bound to `127.0.0.1:8082`. Access it with an SSH tunnel (`ssh -L 8082:127.0.0.1:8082 <server>`) or an authenticated VPN-only proxy.
 - The monitoring host must have the same VPN connectivity and Split-DNS access as a normal user for VPN-only endpoints. For example, `vault.example.com` should resolve to the VPN address on that host.
 - Do not add public DNS records, firewall openings, or public port forwards for VPN-only services just to make a check pass.
 - Configure every endpoint with the URLs users actually visit through the frontend/reverse proxy. Do not point checks at Docker-only service names or internal container ports.
@@ -476,6 +476,9 @@ Enable the service:
 sudo systemctl enable --now gatus
 sudo systemctl status gatus --no-pager
 sudo journalctl -u gatus -n 100 --no-pager
+# From your workstation, open an SSH tunnel:
+ssh -L 8082:127.0.0.1:8082 <server>
+# Then visit http://127.0.0.1:8082 in your browser.
 ```
 
 Gatus restarts on failure and runs checks every minute. A failed condition marks the endpoint unhealthy. Review the Gatus status page/logs and investigate the affected reverse proxy, VPN/DNS route or application. Do not expose private services to the public internet to satisfy a check.
