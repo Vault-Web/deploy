@@ -18,6 +18,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+umask 077
 # Release assets are distributed as a tar.gz archive, not a bare executable.
 ASSET="gatus-linux-$ASSET_ARCH"
 URL="https://github.com/TwiN/gatus/releases/download/$GATUS_VERSION/$ASSET.tar.gz"
