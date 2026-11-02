@@ -446,3 +446,67 @@ For multi-user Syncthing with per-user server folder isolation and VPN-only acce
   - backend CORS allowlist/pattern does not include current frontend origin.
 - WebCrypto unavailable:
   - app opened via plain HTTP or insecure context.
+
+## 10) Independent Runtime Monitoring (Gatus + Heartbeats)
+
+Gatus runs as a **host-level systemd service**, not in `docker-compose.deploy.yml`. This keeps monitoring independent from the application stack: a Compose outage does not also take down the monitor.
+
+### Network and privacy model
+
+- Install Gatus on the deployment host (or another independent host) and keep its dashboard bound to loopback unless you deliberately protect it behind an authenticated VPN-only proxy.
+- The monitoring host must have the same VPN connectivity and Split-DNS access as a normal user for VPN-only endpoints. For example, `vault.example.com` should resolve to the VPN address on that host.
+- Do not add public DNS records, firewall openings, or public port forwards for VPN-only services just to make a check pass.
+- Configure every endpoint with the URLs users actually visit through the frontend/reverse proxy. Do not point checks at Docker-only service names or internal container ports.
+
+### Install Gatus
+
+From the repository root on the server:
+
+```bash
+cd /opt/deploy
+sudo GATUS_VERSION=v5.15.0 ./monitoring/gatus/install.sh
+sudoedit /etc/gatus/gatus.env
+```
+
+Set the URLs in `/etc/gatus/gatus.env`. The example file is [monitoring/gatus/gatus.env.example](./monitoring/gatus/gatus.env.example). It includes Vault Web, Cloud Page, Vaultwarden, Vault Habits and the WebSocket route `wss://vault.example.com/ws-chat`, matching `docker/nginx/default.conf`. Replace every example with the real user-facing route in your installation.
+
+Enable the service:
+
+```bash
+sudo systemctl enable --now gatus
+sudo systemctl status gatus --no-pager
+sudo journalctl -u gatus -n 100 --no-pager
+```
+
+Gatus restarts on failure and runs checks every minute. A failed condition marks the endpoint unhealthy. Review the Gatus status page/logs and investigate the affected reverse proxy, VPN/DNS route or application. Do not expose private services to the public internet to satisfy a check.
+
+### Optional external host and backup heartbeats
+
+Create separate monitors at [healthchecks.io](https://healthchecks.io/) for host uptime and the backup job. Keep generated UUIDs secret. The scripts in [monitoring/healthchecks](./monitoring/healthchecks) are no-ops when their UUID environment variable is absent, so this integration remains optional.
+
+Create `/etc/default/vault-web-heartbeats` with mode `0600` and set:
+
+```bash
+HC_HOST_UUID=replace-with-host-check-uuid
+HC_BACKUP_UUID=replace-with-backup-check-uuid
+```
+
+Install the host timer using the example units:
+
+```bash
+sudo install -m 0755 /opt/deploy/monitoring/healthchecks/host-heartbeat.sh /usr/local/sbin/vault-web-host-heartbeat
+sudo install -m 0644 /opt/deploy/monitoring/healthchecks/host-heartbeat.service.example /etc/systemd/system/vault-web-host-heartbeat.service
+sudo install -m 0644 /opt/deploy/monitoring/healthchecks/host-heartbeat.timer.example /etc/systemd/system/vault-web-host-heartbeat.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now vault-web-host-heartbeat.timer
+```
+
+For backup monitoring, invoke `backup-heartbeat.sh` only after the backup and verification succeed. Install it at a stable path such as `/usr/local/sbin/vault-web-backup-heartbeat` and add that command at the end of the successful backup path in `backup-vault-users.sh`. Never ping at backup start, because a later failure would be incorrectly reported as success. Set healthchecks.io grace periods to exceed the normal job duration; missed pings trigger the monitor's configured email/webhook alerts.
+
+### Troubleshooting
+
+- **All VPN endpoints fail:** check VPN connectivity and Split-DNS (`getent hosts vault.example.com`).
+- **One endpoint fails:** open the same user-facing URL from a VPN client and inspect proxy/application logs; confirm the expected HTTP status.
+- **WebSocket fails:** verify the route supports an HTTP Upgrade handshake and `/ws-chat` matches the frontend proxy.
+- **Heartbeat is late:** inspect the systemd timer/service, outbound HTTPS connectivity and UUID configuration.
+

@@ -1,0 +1,46 @@
+# Gatus runs on the host, outside the application Compose project.
+# Configure these URLs to match the same VPN/reverse-proxy routes used by users.
+endpoints:
+  - name: Vault Web
+    group: Vault Web
+    url: "${VAULT_WEB_URL}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+      - "[RESPONSE_TIME] < 5000"
+
+  - name: Cloud Page
+    group: Vault Web
+    url: "${CLOUD_PAGE_URL}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+      - "[RESPONSE_TIME] < 5000"
+
+  - name: Vaultwarden
+    group: Supporting services
+    url: "${VAULTWARDEN_URL}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+      - "[RESPONSE_TIME] < 5000"
+
+  - name: Vault Habits
+    group: Supporting services
+    url: "${VAULT_HABITS_URL}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+      - "[RESPONSE_TIME] < 5000"
+
+  # Gatus checks the WebSocket handshake on the same VPN-facing route as clients.
+  - name: Vault Web chat WebSocket
+    group: Realtime
+    url: "${VAULT_WEBSOCKET_URL}"
+    interval: 1m
+    conditions:
+      - "[CONNECTED] == true"
+      - "[RESPONSE_TIME] < 5000"
+    client:
+      websocket:
+        heartbeat_interval: 30s
