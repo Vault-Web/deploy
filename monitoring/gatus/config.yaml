@@ -1,5 +1,5 @@
 # Gatus runs on the host, outside the application Compose project.
-# Configure these URLs to match the same VPN/reverse-proxy routes used by users.
+# Set variables in /etc/gatus/gatus.env to the same routes users visit.
 endpoints:
   - name: Vault Web
     group: Vault Web
@@ -33,7 +33,7 @@ endpoints:
       - "[STATUS] == 200"
       - "[RESPONSE_TIME] < 5000"
 
-  # Gatus supports ws:// and wss:// endpoint schemes directly.
+  # Gatus natively performs a WebSocket handshake for ws:// and wss:// URLs.
   - name: Vault Web chat WebSocket
     group: Realtime
     url: "${VAULT_WEBSOCKET_URL}"
