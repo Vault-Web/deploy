@@ -1,4 +1,9 @@
 # Gatus runs on the host, outside the application Compose project.
+# Keep the dashboard local; access it through SSH tunnelling or an authenticated proxy.
+web:
+  address: 127.0.0.1
+  port: 8082
+
 # Set variables in /etc/gatus/gatus.env to the same routes users visit.
 endpoints:
   - name: Vault Web
