@@ -33,7 +33,7 @@ endpoints:
       - "[STATUS] == 200"
       - "[RESPONSE_TIME] < 5000"
 
-  # Gatus checks the WebSocket handshake on the same VPN-facing route as clients.
+  # Gatus supports ws:// and wss:// endpoint schemes directly.
   - name: Vault Web chat WebSocket
     group: Realtime
     url: "${VAULT_WEBSOCKET_URL}"
@@ -41,6 +41,3 @@ endpoints:
     conditions:
       - "[CONNECTED] == true"
       - "[RESPONSE_TIME] < 5000"
-    client:
-      websocket:
-        heartbeat_interval: 30s
