@@ -18,10 +18,16 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+# Release assets are distributed as a tar.gz archive, not a bare executable.
 ASSET="gatus-linux-$ASSET_ARCH"
-URL="https://github.com/TwiN/gatus/releases/download/$GATUS_VERSION/$ASSET"
+URL="https://github.com/TwiN/gatus/releases/download/$GATUS_VERSION/$ASSET.tar.gz"
 
-curl --fail --location --silent --show-error "$URL" -o "$TMP_DIR/gatus"
+curl --fail --location --silent --show-error "$URL" -o "$TMP_DIR/gatus.tar.gz"
+tar -xzf "$TMP_DIR/gatus.tar.gz" -C "$TMP_DIR"
+if [[ ! -f "$TMP_DIR/gatus" ]]; then
+  echo "The release archive did not contain the expected gatus binary." >&2
+  exit 1
+fi
 install -o root -g root -m 0755 "$TMP_DIR/gatus" /usr/local/bin/gatus
 
 if ! getent group gatus >/dev/null; then
