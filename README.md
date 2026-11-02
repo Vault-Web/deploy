@@ -501,7 +501,13 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now vault-web-host-heartbeat.timer
 ```
 
-For backup monitoring, invoke `backup-heartbeat.sh` only after the backup and verification succeed. Install it at a stable path such as `/usr/local/sbin/vault-web-backup-heartbeat` and add that command at the end of the successful backup path in `backup-vault-users.sh`. Never ping at backup start, because a later failure would be incorrectly reported as success. Set healthchecks.io grace periods to exceed the normal job duration; missed pings trigger the monitor's configured email/webhook alerts.
+For backup monitoring, install the hook at a stable path and run it only after the backup and verification succeed:
+
+```bash
+sudo install -m 0755 /opt/deploy/monitoring/healthchecks/backup-heartbeat.sh /usr/local/sbin/vault-web-backup-heartbeat
+```
+
+Then add `/usr/local/sbin/vault-web-backup-heartbeat` as the final command in the successful path of `/usr/local/sbin/backup-vault-users.sh`. Keep it after rsync, retention cleanup and any verification steps. The heartbeat hook is not automatically wired into the pre-existing backup script, so configure this host-side step explicitly. Never ping at backup start, because a later failure would be incorrectly reported as success. Set healthchecks.io grace periods to exceed the normal job duration; missed pings trigger its configured email/webhook alerts.
 
 ### Troubleshooting
 
