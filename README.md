@@ -468,7 +468,20 @@ sudo GATUS_VERSION=v5.15.0 ./monitoring/gatus/install.sh
 sudoedit /etc/gatus/gatus.env
 ```
 
-Set the URLs in `/etc/gatus/gatus.env`. The example file is [monitoring/gatus/gatus.env.example](./monitoring/gatus/gatus.env.example). It includes Vault Web, Cloud Page, Vaultwarden, Vault Habits and the WebSocket route `wss://vault.example.com/ws-chat`, matching `docker/nginx/default.conf`. Replace every example with the real user-facing route in your installation.
+Set the URLs in `/etc/gatus/gatus.env`. The example file is [monitoring/gatus/gatus.env.example](./monitoring/gatus/gatus.env.example). It includes the user-facing Vault Web and Cloud Page UI URLs, a Cloud Page backend probe, Vaultwarden, Vault Habits and the WebSocket route `wss://vault.example.com/ws-chat`, matching `docker/nginx/default.conf`. Replace every example host with the real route in your installation.
+
+The Cloud Page backend probe deliberately requests a nonexistent Secure Send token through `/cloud-api/public/secure-sends/<probe-token>/meta`. A healthy backend returns the expected `404` response body `Secure Send link is unavailable`; this proves the request reached the Cloud Page application rather than merely receiving Angular's SPA shell. If the backend or its database is unavailable, the expected status/body check fails.
+
+To verify the backend monitor on the deployment host, stop only the Cloud Page backend and wait for the next Gatus interval:
+
+```bash
+cd /opt/deploy
+sudo docker compose -f docker-compose.deploy.yml stop cloud-page-backend
+# The "Cloud Page backend" endpoint should become unhealthy.
+sudo docker compose -f docker-compose.deploy.yml start cloud-page-backend
+```
+
+After the backend is healthy again, Gatus should report the endpoint as healthy on a subsequent check.
 
 Enable the service:
 
@@ -504,13 +517,20 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now vault-web-host-heartbeat.timer
 ```
 
-For backup monitoring, install the hook at a stable path and run it only after the backup and verification succeed:
+For backup monitoring, install the hook and attach it to the existing systemd backup service with an `ExecStartPost` drop-in. systemd runs `ExecStartPost` only after the backup command exits successfully, so failed backups never send a success heartbeat:
 
 ```bash
 sudo install -m 0755 /opt/deploy/monitoring/healthchecks/backup-heartbeat.sh /usr/local/sbin/vault-web-backup-heartbeat
+sudo install -d -m 0755 /etc/systemd/system/backup-vault-users.service.d
+sudo tee /etc/systemd/system/backup-vault-users.service.d/healthchecks.conf >/dev/null <<'EOF'
+[Service]
+EnvironmentFile=/etc/default/vault-web-heartbeats
+ExecStartPost=/usr/local/sbin/vault-web-backup-heartbeat
+EOF
+sudo systemctl daemon-reload
 ```
 
-Then add `/usr/local/sbin/vault-web-backup-heartbeat` as the final command in the successful path of `/usr/local/sbin/backup-vault-users.sh`. Keep it after rsync, retention cleanup and any verification steps. The heartbeat hook is not automatically wired into the pre-existing backup script, so configure this host-side step explicitly. Never ping at backup start, because a later failure would be incorrectly reported as success. Set healthchecks.io grace periods to exceed the normal job duration; missed pings trigger its configured email/webhook alerts.
+The required `EnvironmentFile` passes `HC_BACKUP_UUID` from `/etc/default/vault-web-heartbeats` into the hook. The hook runs after the existing backup script, including its retention and verification steps. Do not call it at backup start: a later backup failure must not be reported as success. Test the configured path with a successful backup run, then confirm the backup monitor's last-ping time updates in healthchecks.io. Set its grace period longer than the normal backup duration; missed pings trigger its configured email/webhook alerts.
 
 ### Troubleshooting
 
