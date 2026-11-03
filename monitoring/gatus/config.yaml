@@ -1,0 +1,61 @@
+# Gatus runs on the host, outside the application Compose project.
+# Keep the dashboard local; access it through SSH tunnelling or an authenticated proxy.
+web:
+  address: 127.0.0.1
+  port: 8082
+
+# Set variables in /etc/gatus/gatus.env to the same routes users visit.
+endpoints:
+  - name: Vault Web
+    group: Vault Web
+    url: "${VAULT_WEB_URL}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+      - "[RESPONSE_TIME] < 5000"
+
+  - name: Cloud Page
+    group: Vault Web
+    url: "${CLOUD_PAGE_URL}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+      - "[RESPONSE_TIME] < 5000"
+
+  # A deliberately unknown public Secure Send token exercises the Cloud Page
+  # backend (and its database) through the same /cloud-api/ reverse-proxy route.
+  # The expected 404 and response text prove the request reached the application;
+  # a stopped backend returns a proxy error/connection failure instead.
+  - name: Cloud Page backend
+    group: Vault Web
+    url: "${CLOUD_PAGE_BACKEND_URL}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 404"
+      - "[BODY] == pat(*Secure Send link is unavailable*)"
+      - "[RESPONSE_TIME] < 5000"
+
+  - name: Vaultwarden
+    group: Supporting services
+    url: "${VAULTWARDEN_URL}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+      - "[RESPONSE_TIME] < 5000"
+
+  - name: Vault Habits
+    group: Supporting services
+    url: "${VAULT_HABITS_URL}"
+    interval: 1m
+    conditions:
+      - "[STATUS] == 200"
+      - "[RESPONSE_TIME] < 5000"
+
+  # Gatus natively performs a WebSocket handshake for ws:// and wss:// URLs.
+  - name: Vault Web chat WebSocket
+    group: Realtime
+    url: "${VAULT_WEBSOCKET_URL}"
+    interval: 1m
+    conditions:
+      - "[CONNECTED] == true"
+      - "[RESPONSE_TIME] < 5000"

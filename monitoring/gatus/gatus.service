@@ -1,0 +1,28 @@
+[Unit]
+Description=Gatus external service health monitoring
+Documentation=https://github.com/TwiN/gatus
+Wants=network-online.target
+After=network-online.target
+# When tailscaled provides the private route, optionally add:
+# Wants=tailscaled.service
+# After=tailscaled.service
+
+[Service]
+Type=simple
+User=gatus
+Group=gatus
+EnvironmentFile=/etc/gatus/gatus.env
+Environment=GATUS_CONFIG_PATH=/etc/gatus/config.yaml
+ExecStart=/usr/local/bin/gatus
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/gatus
+StateDirectory=gatus
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

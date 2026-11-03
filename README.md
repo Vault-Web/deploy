@@ -554,3 +554,96 @@ For multi-user Syncthing with per-user server folder isolation and VPN-only acce
   - backend CORS allowlist/pattern does not include current frontend origin.
 - WebCrypto unavailable:
   - app opened via plain HTTP or insecure context.
+
+## 10) Independent Runtime Monitoring (Gatus + Heartbeats)
+
+Gatus runs as a **host-level systemd service**, not in `docker-compose.deploy.yml`. This keeps monitoring independent from the application stack: a Compose outage does not also take down the monitor.
+
+### Network and privacy model
+
+- Install Gatus on the deployment host (or another independent host) and keep its dashboard bound to `127.0.0.1:8082`. Access it with an SSH tunnel (`ssh -L 8082:127.0.0.1:8082 <server>`) or an authenticated VPN-only proxy.
+- The monitoring host must have the same VPN connectivity and Split-DNS access as a normal user for VPN-only endpoints. For example, `vault.example.com` should resolve to the VPN address on that host.
+- Do not add public DNS records, firewall openings, or public port forwards for VPN-only services just to make a check pass.
+- Configure every endpoint with the URLs users actually visit through the frontend/reverse proxy. Do not point checks at Docker-only service names or internal container ports.
+
+### Install Gatus
+
+From the repository root on the server:
+
+```bash
+cd /opt/deploy
+sudo GATUS_VERSION=v5.15.0 ./monitoring/gatus/install.sh
+sudoedit /etc/gatus/gatus.env
+```
+
+Set the URLs in `/etc/gatus/gatus.env`. The example file is [monitoring/gatus/gatus.env.example](./monitoring/gatus/gatus.env.example). It includes the user-facing Vault Web and Cloud Page UI URLs, a Cloud Page backend probe, Vaultwarden, Vault Habits and the WebSocket route `wss://vault.example.com/ws-chat`, matching `docker/nginx/default.conf`. Replace every example host with the real route in your installation.
+
+The Cloud Page backend probe deliberately requests a nonexistent Secure Send token through `/cloud-api/public/secure-sends/<probe-token>/meta`. A healthy backend returns the expected `404` response body `Secure Send link is unavailable`; this proves the request reached the Cloud Page application rather than merely receiving Angular's SPA shell. If the backend or its database is unavailable, the expected status/body check fails.
+
+To verify the backend monitor on the deployment host, stop only the Cloud Page backend and wait for the next Gatus interval:
+
+```bash
+cd /opt/deploy
+sudo docker compose -f docker-compose.deploy.yml stop cloud-page-backend
+# The "Cloud Page backend" endpoint should become unhealthy.
+sudo docker compose -f docker-compose.deploy.yml start cloud-page-backend
+```
+
+After the backend is healthy again, Gatus should report the endpoint as healthy on a subsequent check.
+
+Enable the service:
+
+```bash
+sudo systemctl enable --now gatus
+sudo systemctl status gatus --no-pager
+sudo journalctl -u gatus -n 100 --no-pager
+# From your workstation, open an SSH tunnel:
+ssh -L 8082:127.0.0.1:8082 <server>
+# Then visit http://127.0.0.1:8082 in your browser.
+```
+
+Gatus restarts on failure and runs checks every minute. A failed condition marks the endpoint unhealthy. Review the Gatus status page/logs and investigate the affected reverse proxy, VPN/DNS route or application. Do not expose private services to the public internet to satisfy a check.
+
+### Optional external host and backup heartbeats
+
+Create separate monitors at [healthchecks.io](https://healthchecks.io/) for host uptime and the backup job. Keep generated UUIDs secret. The scripts in [monitoring/healthchecks](./monitoring/healthchecks) are no-ops when their UUID environment variable is absent, so this integration remains optional.
+
+Create `/etc/default/vault-web-heartbeats` with mode `0600` and set:
+
+```bash
+HC_HOST_UUID=replace-with-host-check-uuid
+HC_BACKUP_UUID=replace-with-backup-check-uuid
+```
+
+Install the host timer using the example units:
+
+```bash
+sudo install -m 0755 /opt/deploy/monitoring/healthchecks/host-heartbeat.sh /usr/local/sbin/vault-web-host-heartbeat
+sudo install -m 0644 /opt/deploy/monitoring/healthchecks/host-heartbeat.service.example /etc/systemd/system/vault-web-host-heartbeat.service
+sudo install -m 0644 /opt/deploy/monitoring/healthchecks/host-heartbeat.timer.example /etc/systemd/system/vault-web-host-heartbeat.timer
+sudo systemctl daemon-reload
+sudo systemctl enable --now vault-web-host-heartbeat.timer
+```
+
+For backup monitoring, install the hook and attach it to the existing systemd backup service with an `ExecStartPost` drop-in. systemd runs `ExecStartPost` only after the backup command exits successfully, so failed backups never send a success heartbeat:
+
+```bash
+sudo install -m 0755 /opt/deploy/monitoring/healthchecks/backup-heartbeat.sh /usr/local/sbin/vault-web-backup-heartbeat
+sudo install -d -m 0755 /etc/systemd/system/backup-vault-users.service.d
+sudo tee /etc/systemd/system/backup-vault-users.service.d/healthchecks.conf >/dev/null <<'EOF'
+[Service]
+EnvironmentFile=/etc/default/vault-web-heartbeats
+ExecStartPost=/usr/local/sbin/vault-web-backup-heartbeat
+EOF
+sudo systemctl daemon-reload
+```
+
+The required `EnvironmentFile` passes `HC_BACKUP_UUID` from `/etc/default/vault-web-heartbeats` into the hook. The hook runs after the existing backup script, including its retention and verification steps. Do not call it at backup start: a later backup failure must not be reported as success. Test the configured path with a successful backup run, then confirm the backup monitor's last-ping time updates in healthchecks.io. Set its grace period longer than the normal backup duration; missed pings trigger its configured email/webhook alerts.
+
+### Troubleshooting
+
+- **All VPN endpoints fail:** check VPN connectivity and Split-DNS (`getent hosts vault.example.com`).
+- **One endpoint fails:** open the same user-facing URL from a VPN client and inspect proxy/application logs; confirm the expected HTTP status.
+- **WebSocket fails:** verify the route supports an HTTP Upgrade handshake and `/ws-chat` matches the frontend proxy.
+- **Heartbeat is late:** inspect the systemd timer/service, outbound HTTPS connectivity and UUID configuration.
+

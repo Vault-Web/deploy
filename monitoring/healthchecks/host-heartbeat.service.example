@@ -1,0 +1,7 @@
+[Unit]
+Description=Optional healthchecks.io host heartbeat
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/vault-web-heartbeats
+ExecStart=/usr/local/sbin/vault-web-host-heartbeat
