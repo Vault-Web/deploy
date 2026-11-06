@@ -1,4 +1,4 @@
-FROM python:3.14-slim AS python-base
+FROM python:3.15-slim AS python-base
 ENV UV_COMPILE_BYTECODE=1 \
     PYSETUP_PATH="/opt/pysetup" \
     VENV_PATH="/opt/pysetup/.venv"
