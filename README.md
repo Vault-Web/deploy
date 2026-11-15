@@ -27,7 +27,7 @@ This repository is deployed with this security model:
 6. `passwords.example.com` follows the same VPN-only pattern and proxies to Vaultwarden.
 7. Headscale Caddy proxies `vault.example.com` to `deploy-frontend-1:80`.
 8. Headscale Caddy proxies `passwords.example.com` to `vaultwarden:80`.
-9. Database/admin ports bind to loopback; pgAdmin is an opt-in `admin` profile.
+9. Database/admin ports must bind to loopback; pgAdmin is an opt-in `admin` profile.
 10. Vault user data and Vaultwarden backups run daily to an external disk using incremental snapshots.
 
 Result:
@@ -40,7 +40,7 @@ Result:
 ## Prerequisites
 
 - Debian/Ubuntu server with Docker Engine and Compose plugin
-- `git`, `openssl`, `dnsmasq`
+- `git`, `openssl`, `dnsmasq`, `python3` (deployment port preflight)
 - DNS:
   - `vpn.example.com` -> server public IP
   - `vault.example.com` -> no public A/AAAA record (resolved only via Split-DNS in VPN)
@@ -82,9 +82,17 @@ Start:
 
 ```bash
 cd /opt/deploy
+python3 scripts/check-admin-ports.py
 docker compose -f docker-compose.deploy.yml up -d --build
 docker compose -f docker-compose.deploy.yml ps
 ```
+
+`deploy-up.sh` and `deploy-pull.sh` run this preflight before Docker starts or
+pulls services. It checks effective Compose bindings, including shell overrides
+and the optional admin profile, without printing private configuration. Direct
+Compose commands must run it explicitly; for DB-only startup pass
+`docker-compose.db.yml`. Bare ports or wildcard binds fail closed. Follow
+[`docs/admin-port-migration.md`](docs/admin-port-migration.md) for existing installs.
 
 ### Runtime external links
 

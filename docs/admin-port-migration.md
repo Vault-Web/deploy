@@ -5,6 +5,10 @@ on IPv4 loopback. Both Compose files use the same variables. pgAdmin is now in
 the `admin` profile. Internal database addresses (`db:5432`), credentials, schemas
 and named volumes are unchanged; there is no data conversion. Old `.env` files
 remain effective until an operator edits them. No production migration is automatic.
+Deployment helpers now refuse startup/pulls when the effective database or admin
+bind is not loopback-only. Python 3 must be installed. Existing safe bind strings
+remain compatible; bare ports require the documented configuration migration.
+Direct Compose invocations must run the preflight explicitly.
 
 ## Prerequisites and backups
 
@@ -44,7 +48,10 @@ throughout for a DB-only deployment. Do not run both stacks against one volume.
    example file. Command-shell variable overrides must match these settings.
 3. Render `docker compose -f docker-compose.deploy.yml config` privately and check
    the effective `host_ip` for database/frontend and (with `--profile admin`)
-   pgAdmin. It must be `127.0.0.1`, never `0.0.0.0` or `::`.
+    pgAdmin. It must be `127.0.0.1`, never `0.0.0.0` or `::`.
+   Run `python3 scripts/check-admin-ports.py` before startup; pass
+   `docker-compose.db.yml` for DB-only deployments. The preflight also accepts
+   explicit IPv6 loopback `::1`, but remote-isolation checks remain required.
 4. Stop any existing pgAdmin container explicitly; disabling a profile alone does
    not guarantee that a previously running container stops:
 
