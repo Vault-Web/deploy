@@ -84,6 +84,9 @@ docker compose -f docker-compose.deploy.yml up -d --build
 docker compose -f docker-compose.deploy.yml ps
 ```
 
+Before using Cloud Page, complete [Cloud Page user root mapping](#8-cloud-page-user-root-folder-mapping)
+for each account. Login alone does not assign a Cloud storage directory.
+
 ### Runtime external links
 
 The frontend container writes `runtime-config.local.js` on startup. Set
@@ -474,16 +477,64 @@ umount /mnt/backup5tb || true
 
 ## 8) Cloud Page User Root Folder Mapping
 
-`CLOUD_HOST_ROOT` is mounted as `/host-cloud` in container.
-Root folder paths stored in DB must use container path.
+`CLOUD_HOST_ROOT` is mounted as `/host-cloud` in the Cloud Page container.
+For example, with `CLOUD_HOST_ROOT=/data/vault-users`, the host directory
+`/data/vault-users/alice` is visible there as `/host-cloud/alice`. The Cloud
+database's `users.root_folder_path` must contain the **container-visible** path,
+not the host path. Each account needs its own directory and Cloud user record;
+do not point two users at the same directory or at the shared `/host-cloud` root.
 
-Correct:
+### Assign a new user's root
 
-```sql
-UPDATE users
-SET root_folder_path = '/host-cloud/alice'
-WHERE username = 'alice';
-```
+1. Confirm the account already has exactly one matching record in the **Cloud**
+   database (`POSTGRES_DB_CLOUD`, not the core `POSTGRES_DB_VAULT`). If it is
+   missing or ambiguous, resolve account provisioning first; do not invent IDs
+   or copy a core user row into Cloud.
+2. Create the directory on the host. For the example mapping above:
+
+   ```bash
+   sudo mkdir -p /data/vault-users/alice
+   ```
+
+   Use the ownership/permissions required by the deployed Cloud container and
+   any existing Syncthing setup. Verify Cloud can read and write this directory;
+   do not grant world-writable permissions or recursively change other users' data.
+3. Open an administrative `psql` session in the Cloud database. From `/opt/deploy`:
+
+   ```bash
+   docker compose -f docker-compose.deploy.yml exec db sh -c 'exec psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d cloud_db'
+   ```
+
+   Replace `cloud_db` with your configured `POSTGRES_DB_CLOUD` value if different.
+   The `db` service receives `POSTGRES_USER`, but not `POSTGRES_DB_CLOUD`, so the
+   database name is supplied explicitly. Do not paste database passwords
+   into shell commands or logs.
+4. Inspect the row and record its existing path privately before updating it.
+   Replace `alice` with the intended username. In the same `psql` session:
+
+   ```sql
+   BEGIN;
+   SELECT id, username, root_folder_path
+   FROM users WHERE username = 'alice' FOR UPDATE;
+
+   UPDATE users
+   SET root_folder_path = '/host-cloud/alice'
+   WHERE username = 'alice'
+     AND (root_folder_path IS NULL OR root_folder_path = '')
+   RETURNING id, username, root_folder_path;
+   ```
+
+   Continue with `COMMIT;` only if the inspected account is unique and the update
+   reports exactly `UPDATE 1` with the intended path; otherwise use `ROLLBACK;`
+   and investigate. The guard intentionally leaves existing mappings untouched.
+   Quote SQL string values correctly when adapting the example.
+
+For an already configured account, changing the path redirects access to its
+files; it does not move them. Back up the Cloud database and user files, record
+the previous mapping and coordinate filesystem changes before any reassignment.
+If a new assignment is wrong, stop Cloud operations for that account and restore
+the recorded previous mapping in a reviewed transaction. Preserve any files
+written in the new directory for reconciliation; do not delete them as rollback.
 
 Wrong (causes "Root folder does not exist..."):
 
@@ -502,6 +553,21 @@ Path consistency reference:
 - host storage path: `/data/vault-users/<user>`
 - Cloud Page container-visible path: `/host-cloud/<user>`
 - Syncthing user container-visible path: `/vault-user`
+
+### Setup checklist
+
+- [ ] `db` is healthy and Cloud connects to `POSTGRES_DB_CLOUD` without database errors.
+- [ ] The intended Cloud user row has its own `/host-cloud/<user>` path; that
+      directory exists and is readable/writable from `cloud-page-backend`.
+- [ ] Core and Cloud receive the same configured `JWT_SECRET` through Compose.
+      Compare configuration privately; do not print secrets or rotate keys as a setup test.
+- [ ] From the VPN, sign in and open Cloud through the normal HTTPS portal.
+      `/cloud-api/` must reach Cloud's `/api/` routes through nginx, not the SPA shell.
+- [ ] Upload and download a small disposable file as that user, then remove it
+      through the UI; confirm another user's files are not visible.
+
+This is a manual setup runbook. A future helper can automate these checks and
+the guarded assignment without becoming a full installer.
 
 ## 9) Daily Operations
 
@@ -646,4 +712,3 @@ The required `EnvironmentFile` passes `HC_BACKUP_UUID` from `/etc/default/vault-
 - **One endpoint fails:** open the same user-facing URL from a VPN client and inspect proxy/application logs; confirm the expected HTTP status.
 - **WebSocket fails:** verify the route supports an HTTP Upgrade handshake and `/ws-chat` matches the frontend proxy.
 - **Heartbeat is late:** inspect the systemd timer/service, outbound HTTPS connectivity and UUID configuration.
-
