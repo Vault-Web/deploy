@@ -17,11 +17,16 @@ bytes, both jobs require an owner-only mode-0700 backup directory and probe mode
 changes and (when root) ownership changes. A mismatch fails before capture.
 Do not reformat an existing backup disk or simply change its fstab filesystem type;
 preserve its copies and migrate onto a separate compatible disk. Provide enough free temporary space
-for a full independent restore. Jobs share an exclusive host lock and fail rather
-than overlap, including after persistent timers catch up at boot.
+for a full independent restore. Jobs share an exclusive host lock and queue for up
+to one hour by default, including after persistent timers catch up at boot. Set
+`BACKUP_LOCK_WAIT_SECONDS` to a positive timeout appropriate to measured backup
+duration; an exhausted wait fails visibly and requires an operator retry/alert.
 
 The manifest records expected files from the source before rsync. Changes during
-capture/copy cause a failure if the inventories differ. For consistent multi-file
+capture/copy retry up to three fresh copies if the inventories differ. Rsync uses
+content checksums rather than relying only on size/mtime for incremental reuse.
+Persistent changes still fail without replacing the previous snapshot; pause
+writers and retry after an exhausted capture. For consistent multi-file
 application state, pause writers during the file backup window. These copies are
 not atomic filesystem snapshots. PostgreSQL dumps are transactionally consistent
 per database; cross-database/file consistency requires coordinated writer downtime.
@@ -41,7 +46,8 @@ per database; cross-database/file consistency requires coordinated writer downti
    ```ini
    BACKUP_MNT=/mnt/backup5tb
    VAULT_USERS_SOURCE=/data/vault-users
-   BACKUP_KEEP=5
+    BACKUP_KEEP=5
+    BACKUP_LOCK_WAIT_SECONDS=3600
    RESTORE_TEST_ROOT=/var/tmp
    DEPLOY_DIR=/opt/deploy
    ```

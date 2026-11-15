@@ -41,9 +41,6 @@ SRC="$(realpath -e "${VAULT_USERS_SOURCE:-/data/vault-users}")"
 }
 FINAL="${BASE}/backup-$(date -u +%Y-%m-%d_%H-%M-%S)-$$"
 WORK="$(mktemp -d "${BASE}/.partial.XXXXXXXX")"
-mkdir "${WORK}/data"
-# Capture expectations from the source, not from a possibly incomplete rsync result.
-python3 "${SCRIPT_DIR}/backup-manifest.py" create "${SRC}" "${WORK}/manifest.json"
 LINK=()
 if [ -L "${BASE}/latest" ]; then
   PREV="$(realpath -e "${BASE}/latest")"
@@ -57,8 +54,21 @@ if [ -L "${BASE}/latest" ]; then
     LINK=("--link-dest=${PREV}")
   fi
 fi
-rsync -aH --numeric-ids "${LINK[@]}" "${SRC}/" "${WORK}/data/"
-python3 "${SCRIPT_DIR}/backup-manifest.py" check "${WORK}/data" "${WORK}/manifest.json"
+# Retry transient changes, retaining source-derived completeness expectations.
+# Never publish mismatched trees or treat vanished-file exit 24 as success.
+CAPTURED=false
+for ATTEMPT in 1 2 3; do
+  mkdir "${WORK}/data"
+  if python3 "${SCRIPT_DIR}/backup-manifest.py" create "${SRC}" "${WORK}/manifest.json" &&
+     rsync -aH --checksum --numeric-ids "${LINK[@]}" "${SRC}/" "${WORK}/data/" &&
+     python3 "${SCRIPT_DIR}/backup-manifest.py" check "${WORK}/data" "${WORK}/manifest.json"; then
+    CAPTURED=true
+    break
+  fi
+  echo "Source capture failed (attempt ${ATTEMPT}/3); retrying a fresh copy" >&2
+  rm -rf -- "${WORK}/data" "${WORK}/manifest.json"
+done
+[ "${CAPTURED}" = true ] || { echo 'Could not capture a stable source; pause writers and retry' >&2; exit 1; }
 touch "${WORK}/COMPLETE"
 # A failed drill fails the backup service too, so success heartbeats are not sent.
 verify_snapshot "${WORK}"

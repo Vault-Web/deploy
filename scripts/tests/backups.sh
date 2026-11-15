@@ -62,9 +62,54 @@ VAULT_USERS_SOURCE="${BACKUP_MNT}" fail backup
 (
   exec 8>"${BACKUP_LOCK}"
   flock 8
-  fail backup
+  BACKUP_LOCK_WAIT_SECONDS=1 fail backup
 )
 echo 'PASS: failed copy, special files, overlap and concurrency preserve latest'
+
+# A competing timer queues, then succeeds once the preceding job releases its lock.
+(
+  exec 8>"${BACKUP_LOCK}"
+  flock 8
+  touch "${TMP}/locked"
+  sleep 2
+) &
+HOLDER=$!
+while [ ! -e "${TMP}/locked" ]; do sleep 0.05; done
+BACKUP_LOCK_WAIT_SECONDS=10 backup
+wait "${HOLDER}"
+echo 'PASS: competing backup waits for lock release instead of skipping its run'
+
+# Simulate a one-time upload between manifest capture and the actual copy.
+REAL_RSYNC="$(command -v rsync)"
+export REAL_RSYNC
+cat >"${TMP}/bin/rsync" <<'SH'
+#!/bin/sh
+if [ ! -e "$VAULT_USERS_SOURCE/.changed-once" ]; then
+  printf 'new upload\n' >"$VAULT_USERS_SOURCE/.changed-once"
+fi
+exec "$REAL_RSYNC" "$@"
+SH
+chmod +x "${TMP}/bin/rsync"
+backup
+rm "${TMP}/bin/rsync"
+cmp "${BASE}/latest/data/.changed-once" "${VAULT_USERS_SOURCE}/.changed-once"
+backup verify
+echo 'PASS: changing source retries a fresh complete copy and independent restore'
+
+# Persistent mutations cannot publish or prune a known-good snapshot.
+BEFORE="$(readlink "${BASE}/latest")"
+cat >"${TMP}/bin/rsync" <<'SH'
+#!/bin/sh
+printf 'more changes\n' >>"$VAULT_USERS_SOURCE/.changed-once"
+exec "$REAL_RSYNC" "$@"
+SH
+chmod +x "${TMP}/bin/rsync"
+fail backup
+rm "${TMP}/bin/rsync"
+[ "$(readlink "${BASE}/latest")" = "${BEFORE}" ]
+[ -z "$(find "${BASE}" -name '.partial.*' -print -quit)" ]
+BACKUP_LOCK_WAIT_SECONDS=0 fail backup
+echo 'PASS: exhausted capture retries preserve latest; invalid lock timeout fails'
 
 # Legacy flat snapshots are usable link-dest sources and never pruned.
 mkdir "${BASE}/2026-01-01_23-30-00"

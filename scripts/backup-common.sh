@@ -7,7 +7,9 @@ MNT="$(realpath -e "${BACKUP_MNT:-/mnt/backup5tb}")"
 KEEP="${BACKUP_KEEP:-5}"
 [[ "${KEEP}" =~ ^[1-9][0-9]*$ ]] || { echo 'BACKUP_KEEP must be positive' >&2; exit 2; }
 exec 9>"${BACKUP_LOCK:-/run/lock/vaultweb-backups.lock}"
-flock -n 9 || { echo 'Another backup or verification job is running' >&2; exit 1; }
+LOCK_WAIT="${BACKUP_LOCK_WAIT_SECONDS:-3600}"
+[[ "${LOCK_WAIT}" =~ ^[1-9][0-9]*$ ]] || { echo 'BACKUP_LOCK_WAIT_SECONDS must be positive' >&2; exit 2; }
+flock -w "${LOCK_WAIT}" 9 || { echo 'Timed out waiting for another backup or verification job' >&2; exit 1; }
 MOUNTED=false
 WORK=''
 RESTORE=''
