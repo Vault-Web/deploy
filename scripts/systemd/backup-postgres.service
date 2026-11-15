@@ -1,0 +1,10 @@
+[Unit]
+Description=Backup Vault PostgreSQL databases and roles
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/vaultweb-backups
+UMask=0077
+ExecStart=/bin/bash /opt/deploy/scripts/backup-postgres.sh
