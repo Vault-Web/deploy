@@ -83,6 +83,15 @@ ln -sfn "${CURRENT}" "${BASE}/latest"
 rm -r "${BASE}/backup-incomplete"
 echo 'PASS: incomplete new-format latest cannot be reused as a legacy snapshot'
 
+# Simulate a flattened filesystem that accepts chmod but ignores mode changes.
+chmod 0755 "${BASE}"
+printf '#!/bin/sh\nexit 0\n' >"${TMP}/bin/chmod"
+chmod +x "${TMP}/bin/chmod"
+fail backup
+rm "${TMP}/bin/chmod"
+chmod 0700 "${BASE}"
+echo 'PASS: incompatible destination permissions fail before backup bytes are written'
+
 # Simulate an absent mount: must fail before a snapshot or host fallback write.
 printf '#!/bin/sh\nexit 1\n' >"${TMP}/bin/mountpoint"
 printf '#!/bin/sh\nexit 32\n' >"${TMP}/bin/mount"

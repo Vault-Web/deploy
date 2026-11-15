@@ -9,13 +9,16 @@ if [ "$#" -gt 1 ] || [[ "${ACTION}" != backup && "${ACTION}" != verify ]]; then
   echo "Usage: $0 [backup|verify]" >&2
   exit 2
 fi
-mkdir -p "${BASE}"
+protect_destination "${BASE}"
 
 verify_snapshot() {
   local snapshot=$1
   [ -f "${snapshot}/COMPLETE" ]
   python3 "${SCRIPT_DIR}/backup-manifest.py" check "${snapshot}/data" "${snapshot}/manifest.json"
   RESTORE="$(mktemp -d "${RESTORE_TEST_ROOT:-/var/tmp}/vaultweb-restore.XXXXXXXX")"
+  [[ "$(stat -c '%a:%u' "${RESTORE}")" == "700:$(id -u)" ]] || {
+    echo 'Restore scratch directory is not owner-private' >&2; exit 1;
+  }
   mkdir "${RESTORE}/data"
   # No --link-dest: the drill must read/copy bytes into independent storage.
   rsync -aH --numeric-ids "${snapshot}/data/" "${RESTORE}/data/"

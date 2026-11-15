@@ -11,9 +11,12 @@ not claim to be a complete stack disaster-recovery system.
 
 Use Bash, GNU coreutils, rsync, Python 3, util-linux (`flock`, `mountpoint`), gzip,
 Docker Compose and a backup filesystem supporting hardlinks and the source's
-ownership/permissions. The README's NTFS mount settings may flatten POSIX metadata;
-test that setup first or use a filesystem/mount preserving it. A metadata mismatch
-fails instead of advertising a usable backup. Provide enough free temporary space
+ownership/permissions. Use an existing POSIX-compatible filesystem such as ext4;
+flattened NTFS uid/gid/umask mounts are incompatible. Before writing any sensitive
+bytes, both jobs require an owner-only mode-0700 backup directory and probe mode
+changes and (when root) ownership changes. A mismatch fails before capture.
+Do not reformat an existing backup disk or simply change its fstab filesystem type;
+preserve its copies and migrate onto a separate compatible disk. Provide enough free temporary space
 for a full independent restore. Jobs share an exclusive host lock and fail rather
 than overlap, including after persistent timers catch up at boot.
 

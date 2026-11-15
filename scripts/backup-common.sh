@@ -31,6 +31,37 @@ fi
 # Refuse to write onto the host filesystem if the backup disk is absent.
 mountpoint -q "${MNT}"
 
+protect_destination() {
+  local base=$1 probe expected_uid
+  [ ! -L "${base}" ] || { echo 'Backup directory must not be a symlink' >&2; exit 1; }
+  mkdir -p "${base}"
+  chmod 0700 "${base}"
+  expected_uid="$(id -u)"
+  [[ "$(stat -c '%a:%u' "${base}")" == "700:${expected_uid}" ]] || {
+    echo 'Backup destination cannot enforce private owner-only permissions' >&2; exit 1;
+  }
+  # Probe filesystem semantics before writing a manifest or sensitive dump bytes.
+  WORK="$(mktemp -d "${base}/.partial.XXXXXXXX")"
+  probe="${WORK}/permissions"
+  touch "${probe}"
+  chmod 0640 "${probe}"
+  [[ "$(stat -c %a "${probe}")" == 640 ]] || {
+    echo 'Backup filesystem does not preserve POSIX permissions' >&2; exit 1;
+  }
+  chmod 0600 "${probe}"
+  [[ "$(stat -c %a "${probe}")" == 600 ]] || {
+    echo 'Backup filesystem cannot protect sensitive files' >&2; exit 1;
+  }
+  if [ "${expected_uid}" -eq 0 ]; then
+    chown 65534:65534 "${probe}"
+    [[ "$(stat -c '%u:%g' "${probe}")" == 65534:65534 ]] || {
+      echo 'Backup filesystem does not preserve POSIX ownership' >&2; exit 1;
+    }
+  fi
+  rm -rf -- "${WORK}"
+  WORK=''
+}
+
 publish_snapshot() {
   local base=$1 final=$2
   mv -- "${WORK}" "${final}"

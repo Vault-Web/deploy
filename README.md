@@ -360,15 +360,20 @@ PART_UUID="REPLACE_WITH_BACKUP_PARTITION_UUID"
 MNT="/mnt/backup5tb"
 
 apt-get update
-apt-get install -y rsync hdparm ntfs-3g
+apt-get install -y rsync util-linux
 
 mkdir -p "${MNT}"
 
 grep -q "${PART_UUID}" /etc/fstab || \
-echo "UUID=${PART_UUID} ${MNT} ntfs-3g defaults,uid=0,gid=0,umask=022,nofail 0 0" >> /etc/fstab
+echo "UUID=${PART_UUID} ${MNT} ext4 defaults,nofail 0 0" >> /etc/fstab
 
 mount "${MNT}" || true
 ```
+
+This example requires an already-created ext4 backup filesystem. Do not change
+an existing disk's fstab type or reformat it to follow the example: preserve old
+backups and migrate to a separate tested POSIX-compatible disk. Flattened NTFS
+`uid/gid/umask` mounts are rejected before sensitive data is written.
 
 Install the tracked jobs (see [backup rollout and recovery](docs/backups.md)
 before replacing an existing timer):
