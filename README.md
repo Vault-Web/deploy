@@ -27,7 +27,7 @@ This repository is deployed with this security model:
 6. `passwords.example.com` follows the same VPN-only pattern and proxies to Vaultwarden.
 7. Headscale Caddy proxies `vault.example.com` to `deploy-frontend-1:80`.
 8. Headscale Caddy proxies `passwords.example.com` to `vaultwarden:80`.
-9. Firewall + `DOCKER-USER` rules block accidental exposure of debug/admin ports.
+9. Database/admin ports bind to loopback; pgAdmin is an opt-in `admin` profile.
 10. Vault user data and Vaultwarden backups run daily to an external disk using incremental snapshots.
 
 Result:
@@ -59,6 +59,8 @@ cp -n .env.example .env
 Set required values in `/opt/deploy/.env`:
 
 - `FRONTEND_PORT=127.0.0.1:8080`
+- `POSTGRES_PORT=127.0.0.1:5433`
+- `PGADMIN_PORT=127.0.0.1:8081` (only used with `--profile admin`)
 - `VAULTWARDEN_PUBLIC_URL=https://passwords.example.com`
 - `VAULTWARDEN_DATA_DIR=/data/vaultwarden`
 - strong DB/JWT secrets
@@ -221,16 +223,24 @@ sudo ufw --force enable
 sudo ufw status verbose
 ```
 
-Docker published ports hardening:
+Docker-published ports can bypass UFW. Keep the frontend, Postgres and pgAdmin
+host binds on `127.0.0.1`; do not use bare port numbers. The example configuration
+applies to both Compose files. pgAdmin is disabled by default; operators may start
+it locally with `docker compose -f docker-compose.deploy.yml --profile admin up -d pgadmin`
+and stop it with `docker compose -f docker-compose.deploy.yml --profile admin stop pgadmin`.
+Use an SSH tunnel for remote administration rather than publishing it on a public
+or VPN interface, for example `ssh -L 8081:127.0.0.1:8081 operator@server`.
 
-```bash
-sudo iptables -F DOCKER-USER
-sudo iptables -I DOCKER-USER -p tcp --dport 8080 -j DROP
-sudo iptables -I DOCKER-USER -p tcp --dport 8081 -j DROP
-sudo iptables -I DOCKER-USER -p tcp --dport 5433 -j DROP
-sudo iptables -A DOCKER-USER -j RETURN
-sudo iptables -S DOCKER-USER
-```
+The old `DOCKER-USER --dport 8081/5433/8080` examples were ineffective: Docker
+DNAT changes the destination to the container port before that chain. Do not flush
+shared firewall chains. If an operator deliberately needs non-loopback publication,
+their firewall policy must account for original destinations (conntrack) and IPv6;
+that is outside the default VPN-first setup.
+
+**Existing installations:** updating this checkout does not change `.env` or
+running containers. Follow [the admin-port migration and rollback plan](docs/admin-port-migration.md)
+before applying these settings. Docker Engine 28 or newer is recommended: older
+engines have a known same-L2 reachability issue for localhost-published ports.
 
 ## 5) Verification Checklist
 
@@ -249,6 +259,11 @@ curl -vk https://passwords.example.com/alive
 
 Expected:
 
+- Postgres is bound only to `127.0.0.1:5433`; pgAdmin is absent unless explicitly
+  enabled, then bound only to `127.0.0.1:8081`. Check actual Docker bindings too,
+  since `ss` alone may not show ports when Docker's userland proxy is disabled.
+- From a separate public/LAN/VPN client, connections to the server's ports 5433
+  and 8081 fail (check IPv4 and IPv6); VPN application HTTPS access still works.
 - `vpn.example.com` responds from Caddy/Headscale.
 - `vault.example.com` from VPN client resolves to `100.64.0.10` and returns `200`.
 - `passwords.example.com` from VPN client resolves to `100.64.0.10` and Vaultwarden `/alive` returns `200`.
@@ -646,4 +661,3 @@ The required `EnvironmentFile` passes `HC_BACKUP_UUID` from `/etc/default/vault-
 - **One endpoint fails:** open the same user-facing URL from a VPN client and inspect proxy/application logs; confirm the expected HTTP status.
 - **WebSocket fails:** verify the route supports an HTTP Upgrade handshake and `/ws-chat` matches the frontend proxy.
 - **Heartbeat is late:** inspect the systemd timer/service, outbound HTTPS connectivity and UUID configuration.
-
