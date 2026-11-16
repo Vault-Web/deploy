@@ -54,6 +54,19 @@ class AdminPortsTest(unittest.TestCase):
             with self.subTest(model=model):
                 self.assertEqual(self.check(model), 1)
 
+    def test_frontend_bindings_are_checked_when_present(self):
+        for host, expected in (("127.0.0.1", 0), ("::1", 0), (None, 1),
+                               ("", 1), ("0.0.0.0", 1), ("::", 1), ("192.0.2.1", 1)):
+            with self.subTest(host=host):
+                model = self.model("127.0.0.1")
+                model["services"]["frontend"] = {"ports": [{"host_ip": host, "published": "8080"}]}
+                self.assertEqual(self.check(model), expected)
+
+    def test_frontend_missing_ports_fail_closed(self):
+        model = self.model("127.0.0.1")
+        model["services"]["frontend"] = {"ports": []}
+        self.assertEqual(self.check(model), 1)
+
     def test_render_failure_does_not_expose_diagnostics(self):
         self.assertEqual(self.check({"private-secret": "private-secret"}, 1), 1)
 

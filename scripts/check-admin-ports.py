@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail closed when the effective Compose admin ports are not loopback-only."""
+"""Fail closed when effective Compose database/admin/frontend ports are not loopback-only."""
 import json
 from pathlib import Path
 import subprocess
@@ -22,16 +22,19 @@ def main():
         return 1
     try:
         services = json.loads(result.stdout)["services"]
-        for name in ("db", "pgadmin"):
+        names = ["db", "pgadmin"]
+        if "frontend" in services:
+            names.append("frontend")
+        for name in names:
             ports = services[name].get("ports", [])
             if not ports or any(port.get("host_ip") not in ("127.0.0.1", "::1") for port in ports):
                 print(f"Unsafe {name} host binding. Set its port to 127.0.0.1:PORT in .env "
                       "and check shell overrides. See docs/admin-port-migration.md.", file=sys.stderr)
                 return 1
     except (ValueError, KeyError, TypeError, AttributeError):
-        print("Cannot verify Compose admin port bindings; startup blocked.", file=sys.stderr)
+        print("Cannot verify Compose database/admin/frontend port bindings; startup blocked.", file=sys.stderr)
         return 1
-    print("Compose database/admin host bindings are loopback-only.")
+    print("Compose database/admin/frontend host bindings are loopback-only (where present).")
     return 0
 
 

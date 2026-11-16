@@ -5,7 +5,7 @@ on IPv4 loopback. Both Compose files use the same variables. pgAdmin is now in
 the `admin` profile. Internal database addresses (`db:5432`), credentials, schemas
 and named volumes are unchanged; there is no data conversion. Old `.env` files
 remain effective until an operator edits them. No production migration is automatic.
-Deployment helpers now refuse startup/pulls when the effective database or admin
+Deployment helpers now refuse startup/pulls when the effective database, admin or frontend
 bind is not loopback-only. Python 3 must be installed. Existing safe bind strings
 remain compatible; bare ports require the documented configuration migration.
 Direct Compose invocations must run the preflight explicitly.
@@ -41,10 +41,11 @@ throughout for a DB-only deployment. Do not run both stacks against one volume.
    ```dotenv
    POSTGRES_PORT=127.0.0.1:5433
    PGADMIN_PORT=127.0.0.1:8081
+   FRONTEND_PORT=127.0.0.1:8080
    ```
 
    Preserve custom host port numbers, adding the `127.0.0.1:` prefix. Also verify
-   that `FRONTEND_PORT` remains on loopback. Do not overwrite credentials from the
+   that `FRONTEND_PORT` remains on loopback (full stack only). Do not overwrite credentials from the
    example file. Command-shell variable overrides must match these settings.
 3. Render `docker compose -f docker-compose.deploy.yml config` privately and check
    the effective `host_ip` for database/frontend and (with `--profile admin`)
@@ -57,7 +58,8 @@ throughout for a DB-only deployment. Do not run both stacks against one volume.
 
    ```bash
    docker compose -f docker-compose.deploy.yml --profile admin stop pgadmin
-   docker compose -f docker-compose.deploy.yml up -d --no-deps --force-recreate db
+    docker compose -f docker-compose.deploy.yml up -d --no-deps --force-recreate db
+    docker compose -f docker-compose.deploy.yml up -d --no-deps --force-recreate frontend
    docker compose -f docker-compose.deploy.yml ps db
    ```
 
@@ -69,9 +71,9 @@ throughout for a DB-only deployment. Do not run both stacks against one volume.
    docker compose -f docker-compose.deploy.yml --profile admin up -d --no-deps --force-recreate pgadmin
    ```
 
-6. Inspect actual bindings with `docker inspect` on the DB/pgAdmin container IDs
+6. Inspect actual bindings with `docker inspect` on the DB/pgAdmin/frontend container IDs
    from `docker compose ... ps -q`. Check `NetworkSettings.Ports` and host `ss`.
-   From a separate public/LAN/VPN client verify both host ports are unreachable
+   From a separate public/LAN/VPN client verify these direct host ports are unreachable
    on IPv4 and IPv6. Confirm a localhost or SSH-tunnel connection succeeds and
    VPN HTTPS still works. A local-only check cannot prove remote isolation.
 

@@ -88,7 +88,7 @@ docker compose -f docker-compose.deploy.yml ps
 ```
 
 `deploy-up.sh` and `deploy-pull.sh` run this preflight before Docker starts or
-pulls services. It checks effective Compose bindings, including shell overrides
+pulls services. It checks effective database/admin/frontend Compose bindings, including shell overrides
 and the optional admin profile, without printing private configuration. Direct
 Compose commands must run it explicitly; for DB-only startup pass
 `docker-compose.db.yml`. Bare ports or wildcard binds fail closed. Follow
