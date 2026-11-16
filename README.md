@@ -61,7 +61,7 @@ Set required values in `/opt/deploy/.env`:
 - `FRONTEND_PORT=127.0.0.1:8080`
 - `VAULTWARDEN_PUBLIC_URL=https://passwords.example.com`
 - `VAULTWARDEN_DATA_DIR=/data/vaultwarden`
-- strong DB/JWT secrets
+- strong DB/JWT secrets, including a separate `JWT_MEDIA_SECRET` (generate with `openssl rand -hex 32`)
 - an Argon2id `VAULTWARDEN_ADMIN_TOKEN`
 - valid `CLOUD_HOST_ROOT` (existing host directory)
 
