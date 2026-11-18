@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly independent Vault user restore drill
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
