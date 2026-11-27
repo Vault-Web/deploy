@@ -1,0 +1,30 @@
+name: Deploy CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate Compose configuration
+        run: docker compose -f docker-compose.deploy.yml config --no-interpolate > /dev/null
+
+      - name: Check shell syntax
+        run: bash -n scripts/*.sh scripts/tests/backups.sh
+
+      - name: Test admin port safeguards
+        run: python3 -m unittest discover -s scripts/tests -p test_admin_ports.py
+
+      - name: Test backup and restore scripts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rsync
+          bash scripts/tests/backups.sh
