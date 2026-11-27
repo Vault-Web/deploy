@@ -21,6 +21,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:9
+    profiles: [admin]
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
@@ -44,6 +45,8 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESHSECRET: ${JWT_REFRESH_SECRET}
+      JWT_MEDIASECRET: ${JWT_MEDIA_SECRET:?Set an independent JWT_MEDIA_SECRET in .env}
+      APP_CLOUDPAGE_BASE_URL: http://cloud-page-backend:8090
       APP_TIMEZONE: UTC
     volumes:
       - vault-web-uploads:/app/uploads

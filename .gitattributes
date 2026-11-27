@@ -1,1 +1,5 @@
 .github/workflows/*.lock.yml linguist-generated=true
+scripts/backup-*.sh text eol=lf
+scripts/backup-manifest.py text eol=lf
+scripts/tests/*.sh text eol=lf
+scripts/systemd/* text eol=lf

@@ -27,7 +27,7 @@ This repository is deployed with this security model:
 6. `passwords.example.com` follows the same VPN-only pattern and proxies to Vaultwarden.
 7. Headscale Caddy proxies `vault.example.com` to `deploy-frontend-1:80`.
 8. Headscale Caddy proxies `passwords.example.com` to `vaultwarden:80`.
-9. Firewall + `DOCKER-USER` rules block accidental exposure of debug/admin ports.
+9. Database/admin ports must bind to loopback; pgAdmin is an opt-in `admin` profile.
 10. Vault user data and Vaultwarden backups run daily to an external disk using incremental snapshots.
 
 Result:
@@ -40,7 +40,7 @@ Result:
 ## Prerequisites
 
 - Debian/Ubuntu server with Docker Engine and Compose plugin
-- `git`, `openssl`, `dnsmasq`
+- `git`, `openssl`, `dnsmasq`, `python3` (deployment port preflight)
 - DNS:
   - `vpn.example.com` -> server public IP
   - `vault.example.com` -> no public A/AAAA record (resolved only via Split-DNS in VPN)
@@ -59,9 +59,11 @@ cp -n .env.example .env
 Set required values in `/opt/deploy/.env`:
 
 - `FRONTEND_PORT=127.0.0.1:8080`
+- `POSTGRES_PORT=127.0.0.1:5433`
+- `PGADMIN_PORT=127.0.0.1:8081` (only used with `--profile admin`)
 - `VAULTWARDEN_PUBLIC_URL=https://passwords.example.com`
 - `VAULTWARDEN_DATA_DIR=/data/vaultwarden`
-- strong DB/JWT secrets
+- strong DB/JWT secrets, including a separate `JWT_MEDIA_SECRET` (generate with `openssl rand -hex 32`)
 - an Argon2id `VAULTWARDEN_ADMIN_TOKEN`
 - valid `CLOUD_HOST_ROOT` (existing host directory)
 
@@ -80,12 +82,20 @@ Start:
 
 ```bash
 cd /opt/deploy
+python3 scripts/check-admin-ports.py
 docker compose -f docker-compose.deploy.yml up -d --build
 docker compose -f docker-compose.deploy.yml ps
 ```
 
 Before using Cloud Page, complete [Cloud Page user root mapping](#8-cloud-page-user-root-folder-mapping)
 for each account. Login alone does not assign a Cloud storage directory.
+
+`deploy-up.sh` and `deploy-pull.sh` run this preflight before Docker starts or
+pulls services. It checks effective database/admin/frontend Compose bindings, including shell overrides
+and the optional admin profile, without printing private configuration. Direct
+Compose commands must run it explicitly; for DB-only startup pass
+`docker-compose.db.yml`. Bare ports or wildcard binds fail closed. Follow
+[`docs/admin-port-migration.md`](docs/admin-port-migration.md) for existing installs.
 
 ### Runtime external links
 
@@ -224,16 +234,24 @@ sudo ufw --force enable
 sudo ufw status verbose
 ```
 
-Docker published ports hardening:
+Docker-published ports can bypass UFW. Keep the frontend, Postgres and pgAdmin
+host binds on `127.0.0.1`; do not use bare port numbers. The example configuration
+applies to both Compose files. pgAdmin is disabled by default; operators may start
+it locally with `docker compose -f docker-compose.deploy.yml --profile admin up -d pgadmin`
+and stop it with `docker compose -f docker-compose.deploy.yml --profile admin stop pgadmin`.
+Use an SSH tunnel for remote administration rather than publishing it on a public
+or VPN interface, for example `ssh -L 8081:127.0.0.1:8081 operator@server`.
 
-```bash
-sudo iptables -F DOCKER-USER
-sudo iptables -I DOCKER-USER -p tcp --dport 8080 -j DROP
-sudo iptables -I DOCKER-USER -p tcp --dport 8081 -j DROP
-sudo iptables -I DOCKER-USER -p tcp --dport 5433 -j DROP
-sudo iptables -A DOCKER-USER -j RETURN
-sudo iptables -S DOCKER-USER
-```
+The old `DOCKER-USER --dport 8081/5433/8080` examples were ineffective: Docker
+DNAT changes the destination to the container port before that chain. Do not flush
+shared firewall chains. If an operator deliberately needs non-loopback publication,
+their firewall policy must account for original destinations (conntrack) and IPv6;
+that is outside the default VPN-first setup.
+
+**Existing installations:** updating this checkout does not change `.env` or
+running containers. Follow [the admin-port migration and rollback plan](docs/admin-port-migration.md)
+before applying these settings. Docker Engine 28 or newer is recommended: older
+engines have a known same-L2 reachability issue for localhost-published ports.
 
 ## 5) Verification Checklist
 
@@ -252,6 +270,11 @@ curl -vk https://passwords.example.com/alive
 
 Expected:
 
+- Postgres is bound only to `127.0.0.1:5433`; pgAdmin is absent unless explicitly
+  enabled, then bound only to `127.0.0.1:8081`. Check actual Docker bindings too,
+  since `ss` alone may not show ports when Docker's userland proxy is disabled.
+- From a separate public/LAN/VPN client, connections to the server's ports 5433
+  and 8081 fail (check IPv4 and IPv6); VPN application HTTPS access still works.
 - `vpn.example.com` responds from Caddy/Headscale.
 - `vault.example.com` from VPN client resolves to `100.64.0.10` and returns `200`.
 - `passwords.example.com` from VPN client resolves to `100.64.0.10` and Vaultwarden `/alive` returns `200`.
@@ -340,8 +363,13 @@ docker compose -f docker-compose.deploy.yml up -d vaultwarden
 
 - Snapshot-like backups using `rsync --link-dest` (incremental with hardlinks).
 - Retention: keep only the last 5 snapshots.
-- `latest` symlink always points to the newest snapshot.
-- The backup job mounts backup disk, runs backup, then unmounts.
+- `latest` points only to a completed, restore-verified snapshot.
+- The backup job mounts the disk if necessary and unmounts only a mount it created.
+- Each new snapshot contains `data/`, a SHA-256/metadata manifest and `COMPLETE`.
+  Existing flat snapshots remain readable and are retained during migration.
+- Every backup performs an independent copy into temporary storage and compares
+  contents, paths, symlink targets, ownership and permissions with the source manifest.
+  A weekly job repeats this drill to detect later disk corruption.
 
 ### One-time setup (server root)
 
@@ -358,86 +386,37 @@ PART_UUID="REPLACE_WITH_BACKUP_PARTITION_UUID"
 MNT="/mnt/backup5tb"
 
 apt-get update
-apt-get install -y rsync hdparm ntfs-3g
+apt-get install -y rsync util-linux
 
 mkdir -p "${MNT}"
 
 grep -q "${PART_UUID}" /etc/fstab || \
-echo "UUID=${PART_UUID} ${MNT} ntfs-3g defaults,uid=0,gid=0,umask=022,nofail 0 0" >> /etc/fstab
+echo "UUID=${PART_UUID} ${MNT} ext4 defaults,nofail 0 0" >> /etc/fstab
 
 mount "${MNT}" || true
 ```
 
-Create backup script:
+This example requires an already-created ext4 backup filesystem. Do not change
+an existing disk's fstab type or reformat it to follow the example: preserve old
+backups and migrate to a separate tested POSIX-compatible disk. Flattened NTFS
+`uid/gid/umask` mounts are rejected before sensitive data is written.
+
+Install the tracked jobs (see [backup rollout and recovery](docs/backups.md)
+before replacing an existing timer):
 
 ```bash
-cat >/usr/local/sbin/backup-vault-users.sh <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-SRC="/data/vault-users/"
-MNT="/mnt/backup5tb"
-DST_BASE="${MNT}/vault-users-backups"
-TS="$(date +%F_%H-%M-%S)"
-DST="${DST_BASE}/${TS}"
-LATEST="${DST_BASE}/latest"
-KEEP=5
-DISK_DEV="/dev/sdc"
-
-cleanup() {
-  sync || true
-  mountpoint -q "${MNT}" && umount "${MNT}" || true
-  hdparm -y "${DISK_DEV}" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
-
-mountpoint -q "${MNT}" || mount "${MNT}"
-mkdir -p "${DST_BASE}"
-
-if [ -L "${LATEST}" ] && [ -d "$(readlink -f "${LATEST}")" ]; then
-  PREV="$(readlink -f "${LATEST}")"
-  rsync -aH --delete --link-dest="${PREV}" "${SRC}" "${DST}/"
-else
-  rsync -aH --delete "${SRC}" "${DST}/"
-fi
-
-ln -sfn "${DST}" "${LATEST}"
-
-find "${DST_BASE}" -mindepth 1 -maxdepth 1 -type d -printf '%P\n' \
-  | sort -r | tail -n +$((KEEP+1)) | while read -r old; do
-    rm -rf "${DST_BASE}/${old}"
-  done
-EOF
-
-chmod +x /usr/local/sbin/backup-vault-users.sh
+apt-get install -y rsync python3 util-linux gzip
+install -m 0644 /opt/deploy/scripts/systemd/{backup-vault-users,verify-vault-users,backup-postgres}.{service,timer} /etc/systemd/system/
 ```
 
-Create systemd service + timer:
+Enable schedules after a successful manual run:
 
 ```bash
-cat >/etc/systemd/system/backup-vault-users.service <<'EOF'
-[Unit]
-Description=Incremental backup of /data/vault-users to external disk
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/backup-vault-users.sh
-EOF
-
-cat >/etc/systemd/system/backup-vault-users.timer <<'EOF'
-[Unit]
-Description=Daily incremental backup timer for vault-users (23:30)
-
-[Timer]
-OnCalendar=*-*-* 23:30:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
 systemctl daemon-reload
-systemctl enable --now backup-vault-users.timer
+systemctl start backup-vault-users.service
+systemctl start verify-vault-users.service
+systemctl start backup-postgres.service
+systemctl enable --now backup-vault-users.timer verify-vault-users.timer backup-postgres.timer
 ```
 
 ### Run immediate test backup
@@ -451,7 +430,10 @@ ls -lah /mnt/backup5tb/vault-users-backups
 umount /mnt/backup5tb || true
 ```
 
-`backup-vault-users.service` is `Type=oneshot`; after a successful run, `systemctl status` usually shows `inactive (dead)` with `status=0/SUCCESS`. This is expected.
+The services are `Type=oneshot`; successful runs show `inactive (dead)` with
+`status=0/SUCCESS`. Failures produce a nonzero service result and journal errors.
+Monitor all three units; configure the optional heartbeat below on verification
+and PostgreSQL services as well, using separate monitor UUIDs.
 
 ### Restore procedure (manual)
 
@@ -459,10 +441,17 @@ Pick a snapshot folder and restore to source:
 
 ```bash
 mount /mnt/backup5tb || true
-SNAP="/mnt/backup5tb/vault-users-backups/2026-04-01_23-30-00"
-rsync -aH --delete "${SNAP}/" /data/vault-users/
+SNAP="/mnt/backup5tb/vault-users-backups/backup-2026-11-15_23-30-00-1234"
+rsync -aH --delete --numeric-ids "${SNAP}/data/" /data/vault-users/
 umount /mnt/backup5tb || true
 ```
+
+For legacy flat snapshots, use `${SNAP}/` instead. Stop application writers,
+save the current tree and review the selected manifest before a destructive
+manual restore; follow the rollback plan in [docs/backups.md](docs/backups.md).
+PostgreSQL backups run at 23:45 via server-matched `pg_dumpall`, covering both
+application databases and roles. They are sensitive compressed SQL dumps,
+separate from user-file snapshots; see the same guide for isolated restore checks.
 
 ### Backup troubleshooting
 

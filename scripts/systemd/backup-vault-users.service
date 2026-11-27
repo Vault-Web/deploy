@@ -1,0 +1,8 @@
+[Unit]
+Description=Incremental Vault user backup with isolated restore verification
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/vaultweb-backups
+UMask=0077
+ExecStart=/bin/bash /opt/deploy/scripts/backup-vault-users.sh
