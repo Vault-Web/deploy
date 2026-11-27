@@ -1,0 +1,8 @@
+[Unit]
+Description=Restore the latest Vault user snapshot into temporary storage
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/vaultweb-backups
+UMask=0077
+ExecStart=/bin/bash /opt/deploy/scripts/backup-vault-users.sh verify

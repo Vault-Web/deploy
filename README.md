@@ -360,8 +360,13 @@ docker compose -f docker-compose.deploy.yml up -d vaultwarden
 
 - Snapshot-like backups using `rsync --link-dest` (incremental with hardlinks).
 - Retention: keep only the last 5 snapshots.
-- `latest` symlink always points to the newest snapshot.
-- The backup job mounts backup disk, runs backup, then unmounts.
+- `latest` points only to a completed, restore-verified snapshot.
+- The backup job mounts the disk if necessary and unmounts only a mount it created.
+- Each new snapshot contains `data/`, a SHA-256/metadata manifest and `COMPLETE`.
+  Existing flat snapshots remain readable and are retained during migration.
+- Every backup performs an independent copy into temporary storage and compares
+  contents, paths, symlink targets, ownership and permissions with the source manifest.
+  A weekly job repeats this drill to detect later disk corruption.
 
 ### One-time setup (server root)
 
@@ -378,86 +383,37 @@ PART_UUID="REPLACE_WITH_BACKUP_PARTITION_UUID"
 MNT="/mnt/backup5tb"
 
 apt-get update
-apt-get install -y rsync hdparm ntfs-3g
+apt-get install -y rsync util-linux
 
 mkdir -p "${MNT}"
 
 grep -q "${PART_UUID}" /etc/fstab || \
-echo "UUID=${PART_UUID} ${MNT} ntfs-3g defaults,uid=0,gid=0,umask=022,nofail 0 0" >> /etc/fstab
+echo "UUID=${PART_UUID} ${MNT} ext4 defaults,nofail 0 0" >> /etc/fstab
 
 mount "${MNT}" || true
 ```
 
-Create backup script:
+This example requires an already-created ext4 backup filesystem. Do not change
+an existing disk's fstab type or reformat it to follow the example: preserve old
+backups and migrate to a separate tested POSIX-compatible disk. Flattened NTFS
+`uid/gid/umask` mounts are rejected before sensitive data is written.
+
+Install the tracked jobs (see [backup rollout and recovery](docs/backups.md)
+before replacing an existing timer):
 
 ```bash
-cat >/usr/local/sbin/backup-vault-users.sh <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-SRC="/data/vault-users/"
-MNT="/mnt/backup5tb"
-DST_BASE="${MNT}/vault-users-backups"
-TS="$(date +%F_%H-%M-%S)"
-DST="${DST_BASE}/${TS}"
-LATEST="${DST_BASE}/latest"
-KEEP=5
-DISK_DEV="/dev/sdc"
-
-cleanup() {
-  sync || true
-  mountpoint -q "${MNT}" && umount "${MNT}" || true
-  hdparm -y "${DISK_DEV}" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT
-
-mountpoint -q "${MNT}" || mount "${MNT}"
-mkdir -p "${DST_BASE}"
-
-if [ -L "${LATEST}" ] && [ -d "$(readlink -f "${LATEST}")" ]; then
-  PREV="$(readlink -f "${LATEST}")"
-  rsync -aH --delete --link-dest="${PREV}" "${SRC}" "${DST}/"
-else
-  rsync -aH --delete "${SRC}" "${DST}/"
-fi
-
-ln -sfn "${DST}" "${LATEST}"
-
-find "${DST_BASE}" -mindepth 1 -maxdepth 1 -type d -printf '%P\n' \
-  | sort -r | tail -n +$((KEEP+1)) | while read -r old; do
-    rm -rf "${DST_BASE}/${old}"
-  done
-EOF
-
-chmod +x /usr/local/sbin/backup-vault-users.sh
+apt-get install -y rsync python3 util-linux gzip
+install -m 0644 /opt/deploy/scripts/systemd/{backup-vault-users,verify-vault-users,backup-postgres}.{service,timer} /etc/systemd/system/
 ```
 
-Create systemd service + timer:
+Enable schedules after a successful manual run:
 
 ```bash
-cat >/etc/systemd/system/backup-vault-users.service <<'EOF'
-[Unit]
-Description=Incremental backup of /data/vault-users to external disk
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/sbin/backup-vault-users.sh
-EOF
-
-cat >/etc/systemd/system/backup-vault-users.timer <<'EOF'
-[Unit]
-Description=Daily incremental backup timer for vault-users (23:30)
-
-[Timer]
-OnCalendar=*-*-* 23:30:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
-
 systemctl daemon-reload
-systemctl enable --now backup-vault-users.timer
+systemctl start backup-vault-users.service
+systemctl start verify-vault-users.service
+systemctl start backup-postgres.service
+systemctl enable --now backup-vault-users.timer verify-vault-users.timer backup-postgres.timer
 ```
 
 ### Run immediate test backup
@@ -471,7 +427,10 @@ ls -lah /mnt/backup5tb/vault-users-backups
 umount /mnt/backup5tb || true
 ```
 
-`backup-vault-users.service` is `Type=oneshot`; after a successful run, `systemctl status` usually shows `inactive (dead)` with `status=0/SUCCESS`. This is expected.
+The services are `Type=oneshot`; successful runs show `inactive (dead)` with
+`status=0/SUCCESS`. Failures produce a nonzero service result and journal errors.
+Monitor all three units; configure the optional heartbeat below on verification
+and PostgreSQL services as well, using separate monitor UUIDs.
 
 ### Restore procedure (manual)
 
@@ -479,10 +438,17 @@ Pick a snapshot folder and restore to source:
 
 ```bash
 mount /mnt/backup5tb || true
-SNAP="/mnt/backup5tb/vault-users-backups/2026-04-01_23-30-00"
-rsync -aH --delete "${SNAP}/" /data/vault-users/
+SNAP="/mnt/backup5tb/vault-users-backups/backup-2026-11-15_23-30-00-1234"
+rsync -aH --delete --numeric-ids "${SNAP}/data/" /data/vault-users/
 umount /mnt/backup5tb || true
 ```
+
+For legacy flat snapshots, use `${SNAP}/` instead. Stop application writers,
+save the current tree and review the selected manifest before a destructive
+manual restore; follow the rollback plan in [docs/backups.md](docs/backups.md).
+PostgreSQL backups run at 23:45 via server-matched `pg_dumpall`, covering both
+application databases and roles. They are sensitive compressed SQL dumps,
+separate from user-file snapshots; see the same guide for isolated restore checks.
 
 ### Backup troubleshooting
 
