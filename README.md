@@ -574,7 +574,7 @@ Update with submodules:
 cd /opt/deploy
 git pull --ff-only
 git submodule sync --recursive
-git submodule update --init --recursive --remote
+git submodule update --init --recursive
 docker compose -f docker-compose.deploy.yml up -d --build --remove-orphans
 ```
 

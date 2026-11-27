@@ -8,7 +8,7 @@ echo "[1/3] Syncing submodule remotes..."
 git submodule sync --recursive
 
 echo "[2/3] Initializing/updating submodules..."
-git submodule update --init --recursive --remote
+git submodule update --init --recursive
 
 echo "[3/3] Preparing environment file..."
 if [[ ! -f .env ]]; then
