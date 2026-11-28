@@ -74,6 +74,12 @@ all three keys in one maintenance window and recreate Vault Web, Cloud Page, and
 Vault Habits together. Existing Vault Web sessions and media links will need to
 be renewed after the rotation.
 
+When upgrading an existing Vault Web database to the first release that uses
+Flyway, take a verified backup and follow the [backend migration guide](https://github.com/Vault-Web/vault-web/blob/main/backend/README.md#database-migrations).
+Set `VAULT_WEB_FLYWAY_BASELINE_ON_MIGRATE=true` in `.env` only for the first
+startup against the verified legacy Vault Web schema. After successful startup,
+remove the setting. Fresh databases use the default `false` setting.
+
 Generate the Vaultwarden admin token hash:
 
 ```bash
