@@ -170,6 +170,27 @@ Important:
 - If Vaultwarden clients reject the server URL, verify that `passwords.example.com`
   has a valid HTTPS certificate and that `VAULTWARDEN_PUBLIC_URL` matches it.
 
+### Preserve client IPs for Vault Web rate limits
+
+When upgrading to a Vault Web backend with trusted proxy support, configure the
+proxy chain before rolling out the new backend. By default, Vault Web ignores
+forwarded headers and groups clients that connect through the same proxy into
+one IP bucket.
+
+For this Caddy → nginx → Vault Web topology, give Caddy and nginx stable container
+addresses and list only those addresses in `VAULT_WEB_INTERNAL_PROXIES`. For example,
+if their actual addresses are `172.30.8.10` and `172.30.8.11`, set:
+
+```dotenv
+VAULT_WEB_FORWARD_HEADERS_STRATEGY=native
+VAULT_WEB_INTERNAL_PROXIES='172[.]30[.]8[.](10|11)'
+```
+
+Caddy, as the edge proxy, must discard client-supplied forwarding data before adding
+the address it observed. nginx appends the Caddy peer address. Keep the backend
+unpublished and restrict access to the edge path. Update the allowlist if the proxy
+addresses change.
+
 ## 3) Split-DNS (central, production path)
 
 On server (`root`):
