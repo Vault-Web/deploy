@@ -63,9 +63,16 @@ Set required values in `/opt/deploy/.env`:
 - `PGADMIN_PORT=127.0.0.1:8081` (only used with `--profile admin`)
 - `VAULTWARDEN_PUBLIC_URL=https://passwords.example.com`
 - `VAULTWARDEN_DATA_DIR=/data/vaultwarden`
-- strong DB/JWT secrets, including a separate `JWT_MEDIA_SECRET` (generate with `openssl rand -hex 32`)
+- a strong DB password and independent values for `JWT_SECRET`, `JWT_REFRESH_SECRET`,
+  and `JWT_MEDIA_SECRET`. Run `openssl rand -hex 32` separately for each signing
+  key and save the values only in the private `.env` file.
 - an Argon2id `VAULTWARDEN_ADMIN_TOKEN`
 - valid `CLOUD_HOST_ROOT` (existing host directory)
+
+If an existing deployment used signing keys from an older example file, replace
+all three keys in one maintenance window and recreate Vault Web, Cloud Page, and
+Vault Habits together. Existing Vault Web sessions and media links will need to
+be renewed after the rotation.
 
 Generate the Vaultwarden admin token hash:
 
