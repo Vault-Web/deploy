@@ -1,4 +1,4 @@
-FROM nginx:1.31.1-alpine@sha256:8b1e78743a03dbb2c95171cc58639fef29abc8816598e27fb910ed2e621e589a
+FROM nginx:1.31.9-alpine@sha256:fb4658584bd9a916ffb6f6e365f97c25cfdb2923801f551ea08356e695f14ff7
 
 RUN mkdir -p /usr/share/nginx/html
 COPY services/server-docs /usr/share/nginx/html
