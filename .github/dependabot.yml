@@ -2,6 +2,9 @@ version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
+    # The gh-aw compiler owns the dependency pins in its generated workflows.
+    exclude-paths:
+      - ".github/workflows/agent-*.lock.yml"
     schedule:
       interval: "weekly"
 
@@ -14,3 +17,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Major PostgreSQL upgrades require a planned migration of the existing volume.
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
