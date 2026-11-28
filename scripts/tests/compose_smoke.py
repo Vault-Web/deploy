@@ -35,8 +35,9 @@ def check(condition, message):
 
 
 class Smoke:
-    def __init__(self, port):
+    def __init__(self, port, browser=False):
         self.port = port
+        self.browser = browser
         self.auth = {}
 
     def request(self, label, path, expected=200, method="GET", body=None, headers=None):
@@ -49,6 +50,8 @@ class Smoke:
                 f"{label}: expected HTTP {expected}, got {response.status}",
             )
             return response.read(), response.headers
+        except (OSError, http.client.HTTPException) as error:
+            raise RuntimeError(f"{label}: {error}") from error
         finally:
             connection.close()
 
@@ -163,21 +166,61 @@ class Smoke:
         data, _ = self.request("Download profile picture through nginx", "/" + path.lstrip("/"))
         check(data == PNG, "Profile picture differs from the uploaded image")
 
-    def share(self):
+    def cloud_pdf_preview(self):
+        preview = self.json(
+            "Create Cloud PDF preview", "/api/media/token", {"path": "smoke.pdf", "renewable": True},
+        )
+        if preview.get("previewId"):
+            path = "/api/media/stream/preview/" + quote(preview["previewId"], safe="")
+        else:
+            path = "/api/media/stream/" + quote(preview["token"], safe="")
+
+        data, headers = self.request("Load Cloud PDF preview", path)
+        check(data == PDF, "Cloud preview did not return the uploaded PDF")
+        check(headers.get_content_type() == "application/pdf", "Cloud preview did not return a PDF type")
+        data, headers = self.request(
+            "Load Cloud PDF preview range", path, expected=206, headers={"Range": "bytes=0-4"},
+        )
+        check(data == b"%PDF-", "Cloud preview returned incorrect range bytes")
+        check(headers.get("Content-Range") == f"bytes 0-4/{len(PDF)}", "Cloud preview returned an invalid range")
+
+    def create_share(self, path, password=None):
         expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
         response = self.json(
-            "Create protected Secure Send",
+            "Create Secure Send",
             "/cloud-api/secure-sends",
-            {"filePath": "smoke.pdf", "expiresAt": expires_at.isoformat(), "password": SHARE_PASSWORD},
+            {"filePath": path, "expiresAt": expires_at.isoformat(), "password": password},
         )
         link = urlparse(response.get("url", ""))
         check(
             link.netloc == SHARE_HOST and link.path.startswith("/s/"),
             "Share URL did not use the public host",
         )
+        return response["id"], link.path
+
+    def revoke_share(self, share_id):
+        self.request(
+            "Revoke Secure Send", "/cloud-api/secure-sends/" + quote(share_id, safe=""),
+            expected=204, method="DELETE", headers=self.auth,
+        )
+
+    def share_folder_for_browser(self):
+        for name, data, mime in (
+            ("report.pdf", PDF, "application/pdf"),
+            ("note.txt", b"Secure Send browser smoke fixture", "text/plain"),
+            ("icon.png", PNG, "image/png"),
+        ):
+            self.multipart(
+                "Upload folder preview fixture", "/cloud-api/files/upload", name, data, mime,
+                fields=(("folderPath", "preview-fixtures"),),
+            )
+        return self.create_share("preview-fixtures")
+
+    def share(self):
+        share_id, path = self.create_share("smoke.pdf", SHARE_PASSWORD)
         share_headers = {"Host": SHARE_HOST}
-        self.request("Load share landing page", link.path, headers=share_headers)
-        endpoint = "/cloud-api/public/secure-sends/" + quote(link.path.split("/")[-1], safe="") + "/view"
+        self.request("Load share landing page", path, headers=share_headers)
+        endpoint = "/cloud-api/public/secure-sends/" + quote(path.split("/")[-1], safe="") + "/view"
         self.request("Deny passwordless preview", endpoint, expected=401, headers=share_headers)
         data, headers = self.request(
             "Preview shared PDF",
@@ -193,10 +236,18 @@ class Smoke:
             expected=404,
             headers=share_headers,
         )
-        self.request(
-            "Revoke Secure Send", "/cloud-api/secure-sends/" + quote(response["id"], safe=""),
-            expected=204, method="DELETE", headers=self.auth,
-        )
+        if self.browser:
+            from share_browser_smoke import check_share_ui
+
+            folder_id, folder_path = self.share_folder_for_browser()
+            check_share_ui(
+                f"http://{SHARE_HOST}:{self.port}", path, folder_path, SHARE_PASSWORD, PDF,
+                lambda: self.revoke_share(share_id),
+            )
+            self.revoke_share(folder_id)
+            print("Secure Send Chromium smoke passed through nginx at phone viewport")
+        else:
+            self.revoke_share(share_id)
         self.request(
             "Deny revoked preview", endpoint, expected=404,
             headers={**share_headers, "X-Secure-Send-Password": SHARE_PASSWORD},
@@ -229,6 +280,7 @@ class Smoke:
             self.websocket()
             self.share()
         self.read_files()
+        self.cloud_pdf_preview()
         print(f"Compose smoke stage {stage} passed through nginx")
 
 
@@ -236,9 +288,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("port", type=int)
     parser.add_argument("stage", choices=("ready", "write", "verify"))
+    parser.add_argument("--browser", action="store_true")
     args = parser.parse_args()
     try:
-        Smoke(args.port).run(args.stage)
+        Smoke(args.port, browser=args.browser).run(args.stage)
     except (KeyError, OSError, http.client.HTTPException, RuntimeError, ValueError) as error:
         print(f"Compose smoke failed: {error}", file=sys.stderr)
         return 1

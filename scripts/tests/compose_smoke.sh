@@ -3,6 +3,14 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
+if [[ $# -gt 1 || ( $# -eq 1 && $1 != --browser ) ]]; then
+  echo "Usage: $0 [--browser]" >&2
+  exit 1
+fi
+if [[ ${1:-} == --browser ]]; then
+  python3 -c 'import playwright' || { echo "Install Playwright for --browser." >&2; exit 1; }
+fi
+
 # Bind mounts must resolve on this machine and no test should target a remote daemon.
 if [[ -n ${DOCKER_CONTEXT:-} || -z ${DOCKER_HOST:-} ]]; then
   docker_host=$(docker context inspect --format '{{.Endpoints.docker.Host}}')
@@ -64,17 +72,23 @@ export VAULT_HABITS_NICEGUI_SECRET=local-smoke-habits-secret
 export VAULT_HABITS_LOGIN_URL=http://vault.smoke.invalid/login VAULT_WEB_HOME_URL=http://vault.smoke.invalid
 export VAULT_HABITS_URL=http://habits.smoke.invalid/vault-web-login VAULT_HABITS_USER_EMAIL_DOMAIN=smoke.invalid
 mkdir -p "$CLOUD_HOST_ROOT/smoke"
+if [[ ${1:-} == --browser ]]; then
+  # Keep the bind-mounted fixture directories writable for host-side cleanup.
+  mkdir -p "$CLOUD_HOST_ROOT/smoke/preview-fixtures"
+fi
 
 "${compose[@]}" up -d --build --wait --wait-timeout 180
 
 run_check() {
+  local stage=$1
+  shift
   local frontend_address
   frontend_address=$("${compose[@]}" port frontend 80)
   if [[ ! $frontend_address =~ ^127\.0\.0\.1:([0-9]+)$ ]]; then
     echo "Unexpected smoke frontend binding." >&2
     return 1
   fi
-  python3 scripts/tests/compose_smoke.py "${BASH_REMATCH[1]}" "$1"
+  python3 scripts/tests/compose_smoke.py "${BASH_REMATCH[1]}" "$stage" "$@"
 }
 
 run_check ready
@@ -82,7 +96,7 @@ run_check ready
 INSERT INTO users (id, username, root_folder_path)
 VALUES ('deploy-smoke-cloud-user', 'deploy-smoke', '/host-cloud/smoke');
 SQL
-run_check write
+run_check write "$@"
 
 # Replace the app containers to check that data survives container replacement,
 # including files in the core uploads volume and the Cloud bind mount.
