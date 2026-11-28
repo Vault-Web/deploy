@@ -23,11 +23,12 @@ server {
     listen 80;
     listen 8080;
     listen 8090;
-    location = /api/public/secure-sends/fixture/view {
+    location = /api/public/secure-sends/secure-send-log-fixture/view {
         if ($http_x_secure_send_password != "test-only") { return 401; }
         default_type application/pdf;
         return 200 '%PDF-1.7';
     }
+    location = /api/public/secure-sends/secure-send-log-fixture/failure { return 444; }
     location = /api/public/secure-sends/expired/view { return 404; }
     location = /uploads/profile-pictures/fixture.png {
         default_type image/png;
@@ -60,12 +61,34 @@ for attempt in {1..20}; do
   sleep 1
 done
 
-status() { curl -sS -o /dev/null -w '%{http_code}' "$@"; }
-view="$base_url/cloud-api/public/secure-sends/fixture/view"
+status() { curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "$@"; }
+capability=secure-send-log-fixture
+query=smoke-query-canary
+view="$base_url/cloud-api/public/secure-sends/$capability/view?unused=$query"
 [ "$(status -H 'Host: share.invalid' "$view")" = 401 ]
 [ "$(curl -fsS -H 'Host: share.invalid' -H 'X-Secure-Send-Password: test-only' "$view")" = '%PDF-1.7' ]
+[ "$(curl -fsS -H 'Host: vault.invalid' -H 'X-Secure-Send-Password: test-only' "$view")" = '%PDF-1.7' ]
+# nginx routes the normalized URI even when the prefix is percent-encoded.
+encoded_view="$base_url/cloud-api/public/%73ecure-sends/$capability/view"
+[ "$(curl -fsS --path-as-is -H 'Host: share.invalid' -H 'X-Secure-Send-Password: test-only' "$encoded_view")" = '%PDF-1.7' ]
 [ "$(status -H 'Host: share.invalid' "$base_url/cloud-api/public/secure-sends/expired/view")" = 404 ]
 [ "$(status -H 'Host: share.invalid' "$base_url/api/auth/users")" = 404 ]
 [ "$(status -H 'Host: share.invalid' "$base_url/uploads/profile-pictures/fixture.png")" = 404 ]
 [ "$(curl -fsS -H 'Host: vault.invalid' "$base_url/uploads/profile-pictures/fixture.png")" = 'fixture-image' ]
-echo 'Share proxy routes protected previews and keeps portal routes private'
+
+# The fixture closes the upstream connection without an HTTP response. nginx
+# normally includes the raw request URI when logging this proxy error.
+failure="$base_url/cloud-api/public/secure-sends/$capability/failure?unused=$query"
+[ "$(status -H 'Host: share.invalid' "$failure")" = 502 ]
+[ "$(status -H 'Host: vault.invalid' "$failure")" = 502 ]
+
+proxy_logs=$(docker logs "$frontend" 2>&1)
+redacted='"GET /cloud-api/public/secure-sends/[redacted] HTTP/1.1"'
+[ "$(grep -Fc "$redacted 200" <<< "$proxy_logs")" = 3 ]
+[ "$(grep -Fc "$redacted 502" <<< "$proxy_logs")" = 2 ]
+if grep -Fq -e "$capability" -e "$query" <<< "$proxy_logs"; then
+  echo 'nginx logged a Secure Send capability or query string' >&2
+  exit 1
+fi
+
+echo 'Share proxy routes protected previews, keeps portal routes private, and redacts capabilities'
