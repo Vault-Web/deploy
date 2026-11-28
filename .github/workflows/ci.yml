@@ -18,10 +18,16 @@ jobs:
         run: docker compose -f docker-compose.deploy.yml config --no-interpolate > /dev/null
 
       - name: Check shell syntax
-        run: bash -n scripts/*.sh scripts/tests/backups.sh
+        run: |
+          for script in scripts/*.sh scripts/tests/*.sh; do
+            bash -n "$script"
+          done
 
       - name: Test admin port safeguards
         run: python3 -m unittest discover -s scripts/tests -p test_admin_ports.py
+
+      - name: Test nginx share and portal routes
+        run: bash scripts/tests/share_proxy.sh
 
       - name: Test backup and restore scripts
         run: |
