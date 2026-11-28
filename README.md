@@ -621,6 +621,27 @@ docker compose -f /opt/deploy/docker-compose.deploy.yml logs -f vaultwarden
 docker compose -f /opt/headscale/docker-compose.yml logs -f caddy
 ```
 
+### Test the Compose stack locally
+
+Initialize the submodules, then run the smoke test from the Deploy checkout.
+
+```bash
+git submodule update --init --recursive
+bash scripts/tests/compose_smoke.sh
+```
+
+The smoke test builds the checked-out services with the production Compose file
+and starts them in a disposable project. It uses test-only configuration, its own
+storage and an ephemeral loopback nginx port. It requires a local Docker daemon
+with Compose 2.24.4 or newer and Python 3.
+
+Through nginx, the test covers documentation, login, an authenticated dashboard
+request, Cloud file upload and download, profile picture routing, the WebSocket
+upgrade and a password-protected Secure Send PDF. It checks that private routes stay off
+the guest host, revoked links stop working, and uploaded files survive
+replacement of the app containers. Deploy CI runs the same test against the
+submodule revisions proposed by a pull request. The test starts with fresh data.
+
 ## 10) Syncthing User Sync (Optional)
 
 For multi-user Syncthing with per-user server folder isolation and VPN-only access, use:

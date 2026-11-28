@@ -34,3 +34,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y rsync
           bash scripts/tests/backups.sh
+
+  smoke:
+    name: Compose smoke through nginx
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Build and exercise the pinned Compose stack
+        run: bash scripts/tests/compose_smoke.sh

@@ -37,7 +37,9 @@ COPY services/vault-habits/start.sh .
 COPY services/vault-habits/beaverhabits ./beaverhabits
 COPY services/vault-habits/statics ./statics
 COPY services/vault-habits/healthcheck.py .
-RUN chmod -R g+w /app && \
+# Set ownership before Compose initializes the persistent SQLite volume.
+RUN mkdir -p /app/.user && \
+    chmod -R g+w /app && \
     chown -R nobody /app
 USER nobody
 
