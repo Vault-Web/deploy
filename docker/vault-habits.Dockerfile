@@ -43,6 +43,9 @@ RUN mkdir -p /app/.user && \
     chown -R nobody /app
 USER nobody
 
+# Gunicorn 25.1.0 can deadlock while forking a worker with the control socket enabled.
+ENV GUNICORN_CMD_ARGS=--no-control-socket
+
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 \
     CMD python healthcheck.py
 
