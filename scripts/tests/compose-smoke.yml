@@ -1,0 +1,16 @@
+services:
+  db:
+    container_name: !reset null
+    ports: !reset []
+  pgadmin:
+    ports: !reset []
+  vaultwarden:
+    volumes:
+      - vaultwarden-smoke:/data
+  frontend:
+    ports: !override
+      - target: 80
+        host_ip: 127.0.0.1
+
+volumes:
+  vaultwarden-smoke:
