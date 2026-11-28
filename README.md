@@ -636,11 +636,23 @@ storage and an ephemeral loopback nginx port. It requires a local Docker daemon
 with Compose 2.24.4 or newer and Python 3.
 
 Through nginx, the test covers documentation, login, an authenticated dashboard
-request, Cloud file upload and download, profile picture routing, the WebSocket
-upgrade and a password-protected Secure Send PDF. It checks that private routes stay off
-the guest host, revoked links stop working, and uploaded files survive
-replacement of the app containers. Deploy CI runs the same test against the
-submodule revisions proposed by a pull request. The test starts with fresh data.
+request, Cloud file upload and download, Cloud PDF preview and range requests,
+profile picture routing, the WebSocket upgrade and a password-protected Secure
+Send PDF. It checks that the guest host rejects private routes, revoked links
+stop working, and uploaded files survive replacement of the app containers.
+Deploy CI tests the submodule revisions proposed by a pull request with fresh data.
+
+Deploy CI also checks the public share page in Chromium with a phone viewport.
+It exercises password retry, PDF preview and download, folder previews for PDF,
+text and images, revoked links, and denial of private routes through nginx.
+To include this check locally, run the following in an activated Python virtual
+environment.
+
+```bash
+python3 -m pip install 'playwright==1.64.1'
+python3 -m playwright install --with-deps --no-shell chromium
+bash scripts/tests/compose_smoke.sh --browser
+```
 
 ## 10) Syncthing User Sync (Optional)
 

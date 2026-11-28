@@ -45,5 +45,13 @@ jobs:
           submodules: recursive
           persist-credentials: false
 
+      - name: Install the Chromium smoke test dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/deploy-smoke-venv"
+          source "$RUNNER_TEMP/deploy-smoke-venv/bin/activate"
+          python3 -m pip install 'playwright==1.64.1'
+          python3 -m playwright install --with-deps --no-shell chromium
+          echo "$RUNNER_TEMP/deploy-smoke-venv/bin" >> "$GITHUB_PATH"
+
       - name: Build and exercise the pinned Compose stack
-        run: bash scripts/tests/compose_smoke.sh
+        run: bash scripts/tests/compose_smoke.sh --browser
