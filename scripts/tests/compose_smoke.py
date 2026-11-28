@@ -205,10 +205,6 @@ class Smoke:
         )
 
     def share_folder_for_browser(self):
-        self.request(
-            "Create share fixture folder", "/cloud-api/folders?parentPath=&name=preview-fixtures",
-            method="POST", headers=self.auth,
-        )
         for name, data, mime in (
             ("report.pdf", PDF, "application/pdf"),
             ("note.txt", b"Secure Send browser smoke fixture", "text/plain"),

@@ -72,6 +72,10 @@ export VAULT_HABITS_NICEGUI_SECRET=local-smoke-habits-secret
 export VAULT_HABITS_LOGIN_URL=http://vault.smoke.invalid/login VAULT_WEB_HOME_URL=http://vault.smoke.invalid
 export VAULT_HABITS_URL=http://habits.smoke.invalid/vault-web-login VAULT_HABITS_USER_EMAIL_DOMAIN=smoke.invalid
 mkdir -p "$CLOUD_HOST_ROOT/smoke"
+if [[ ${1:-} == --browser ]]; then
+  # Keep the bind-mounted fixture directories writable for host-side cleanup.
+  mkdir -p "$CLOUD_HOST_ROOT/smoke/preview-fixtures"
+fi
 
 "${compose[@]}" up -d --build --wait --wait-timeout 180
 
